@@ -4349,6 +4349,8 @@ const K8sClusterDetail = () => {
                           }}
                         />
                       )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -4431,7 +4433,6 @@ const K8sClusterDetail = () => {
                               )}
                           </tbody>
                         </table>
-                      </div>
                       </div>
                       {!loading && secrets.length > 0 && (
                         <Pagination
@@ -4563,8 +4564,8 @@ const K8sClusterDetail = () => {
                           }}
                         >
                           {t('nav.securityMonitoring')}
-                  </button>
-                </div>
+                        </button>
+                      </div>
                       <div className="security-content">
                         {(activeSubtab === 'authorization' || activeSubtab === '') && (
                           <div>
@@ -4596,9 +4597,9 @@ const K8sClusterDetail = () => {
                             <p>安全监控功能正在开发中，集群ID: {id}</p>
                           </div>
                         )}
-              </div>
-            </div>
-          )}
+                      </div>
+                    </div>
+                  )}
 
                   {activeTab === 'storage' && (
                     <div className="storage-section">
