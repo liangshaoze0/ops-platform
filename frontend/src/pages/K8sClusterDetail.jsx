@@ -145,6 +145,15 @@ const K8sClusterDetail = () => {
   const [pvcsPageSize, setPvcsPageSize] = useState(20)
   const [pvcsTotal, setPvcsTotal] = useState(0)
 
+  // 命名空间搜索和选择状态
+  const [namespaceSearchTerm, setNamespaceSearchTerm] = useState('')
+  const [namespaceSearchType, setNamespaceSearchType] = useState('name')
+  const [selectedNamespaces, setSelectedNamespaces] = useState([])
+  const [showCreateNamespaceModal, setShowCreateNamespaceModal] = useState(false)
+  const [showEditNamespaceModal, setShowEditNamespaceModal] = useState(false)
+  const [showQuotaModal, setShowQuotaModal] = useState(false)
+  const [editingNamespace, setEditingNamespace] = useState(null)
+
   // 从URL参数同步tab和type（初始化时从URL恢复状态）
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab') || 'info'
@@ -572,12 +581,14 @@ const K8sClusterDetail = () => {
     try {
       setLoading(true)
       setError('')
-      const response = await api.get(`/k8s/clusters/${id}/namespaces`, {
-        params: {
+      const params = {
           page: namespacesPage,
           page_size: namespacesPageSize,
-        },
-      })
+      }
+      if (namespaceSearchTerm && namespaceSearchType === 'name') {
+        params.search = namespaceSearchTerm
+      }
+      const response = await api.get(`/k8s/clusters/${id}/namespaces`, { params })
       const data = response.data.data || response.data
       if (data.data) {
         setNamespaces(data.data)
@@ -2037,67 +2048,199 @@ const K8sClusterDetail = () => {
                           </div>
                         </div>
                       ) : (
-                        <div className="table-wrapper">
-                          <table className="data-table">
-                            <thead>
-                              <tr>
-                                <th>{t('k8s.namespaceName')}</th>
-                                <th>{t('k8s.status')}</th>
-                                <th>{t('k8s.createdAt')}</th>
-                                <th>{t('k8s.labels')}</th>
-                                <th>{t('common.actions')}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {namespaces.length === 0 ? (
-                                <tr>
-                                  <td colSpan="5" className="empty-state">
-                                    {t('k8s.noNamespaces')}
-                                  </td>
-                                </tr>
-                              ) : (
-                                namespaces.map((ns) => (
-                                  <tr key={ns.name}>
-                                    <td>
-                                      <a
-                                        href="#"
-                                        className="namespace-link"
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          setSelectedNamespace(ns.name)
-                                        }}
-                                      >
-                                        {ns.name}
-                                      </a>
-                                    </td>
-                                    <td>
-                                      <span className={`status-badge ${ns.status === 'Active' ? 'status-connected' : 'status-unknown'}`}>
-                                        {ns.status}
-                                      </span>
-                                    </td>
-                                    <td>
-                                      {new Date(ns.created_at).toLocaleString('zh-CN')}
-                                    </td>
-                                    <td>
-                                      {ns.labels && Object.keys(ns.labels).length > 0
-                                        ? Object.entries(ns.labels).map(([k, v]) => `${k}=${v}`).join(', ')
-                                        : '-'}
-                                    </td>
-                                    <td>
-                                      <button
-                                        className="btn-text btn-view"
-                                        onClick={() => setSelectedNamespace(ns.name)}
-                                        title={t('k8s.viewPods')}
-                                      >
-                                        {t('k8s.viewPods')}
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
+                            <div>
+                          <div className="section-header">
+                            <h2>{t('k8s.namespacesAndQuota')}</h2>
+                          </div>
+                          <div className="section-actions-left">
+                            <button
+                              className="btn-primary"
+                              onClick={() => setShowCreateNamespaceModal(true)}
+                            >
+                              {t('common.create')}
+                            </button>
+                          </div>
+                          <div className="search-bar">
+                            <div className="search-controls-vertical">
+                              <select
+                                className="search-type-select"
+                                value={namespaceSearchType}
+                                onChange={(e) => setNamespaceSearchType(e.target.value)}
+                              >
+                                <option value="name">{t('k8s.name')}</option>
+                              </select>
+                              <input
+                                type="text"
+                                className="search-input-small"
+                                placeholder={t('k8s.searchPlaceholder')}
+                                value={namespaceSearchTerm}
+                                onChange={(e) => setNamespaceSearchTerm(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    fetchNamespaces()
+                                  }
+                                }}
+                              />
+                              <button
+                                className="btn-search"
+                                onClick={() => fetchNamespaces()}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                              <div className="table-wrapper">
+                                <table className="data-table">
+                                  <thead>
+                                    <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedNamespaces.length === namespaces.length && namespaces.length > 0}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedNamespaces(namespaces.map(ns => ns.name))
+                                        } else {
+                                          setSelectedNamespaces([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                      <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>{t('k8s.labels')}</th>
+                                      <th>{t('k8s.status')}</th>
+                                      <th>{t('k8s.createdAt')}</th>
+                                      <th>{t('common.actions')}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                {namespaces.length === 0 ? (
+                                      <tr>
+                                    <td colSpan="7" className="empty-state">
+                                      {t('k8s.noNamespaces')}
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                  namespaces
+                                    .filter((ns) => {
+                                      if (!namespaceSearchTerm) return true
+                                      if (namespaceSearchType === 'name') {
+                                        return ns.name.toLowerCase().includes(namespaceSearchTerm.toLowerCase())
+                                      }
+                                      return true
+                                    })
+                                    .map((ns) => (
+                                    <tr key={ns.name}>
+                                      <td>
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedNamespaces.includes(ns.name)}
+                                          onChange={(e) => {
+                                            if (e.target.checked) {
+                                              setSelectedNamespaces([...selectedNamespaces, ns.name])
+                                            } else {
+                                              setSelectedNamespaces(selectedNamespaces.filter(name => name !== ns.name))
+                                            }
+                                          }}
+                                        />
+                                            </td>
+                                      <td>
+                                          <a 
+                                            href="#" 
+                                          className="namespace-link"
+                                            onClick={(e) => {
+                                              e.preventDefault()
+                                            setSelectedNamespace(ns.name)
+                                          }}
+                                        >
+                                          {ns.name}
+                                        </a>
+                                            </td>
+                                      <td></td>
+                                      <td>
+                                        {ns.labels && Object.keys(ns.labels).length > 0
+                                          ? Object.entries(ns.labels).map(([k, v]) => (
+                                              <span key={k} className="label-tag">{k}={v}</span>
+                                            ))
+                                                : '-'}
+                                            </td>
+                                            <td>
+                                        <span className={`status-badge ${ns.status === 'Active' ? 'status-connected' : 'status-unknown'}`}>
+                                          <span className="status-icon">✓</span> {t('k8s.ready')}
+                                  </span>
+                                        </td>
+                                      <td>
+                                        {ns.created_at ? new Date(ns.created_at).toLocaleString('zh-CN') : '-'}
+                                          </td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button 
+                                            className="btn-text"
+                                              onClick={() => {
+                                              setEditingNamespace(ns)
+                                              setShowQuotaModal(true)
+                                            }}
+                                          >
+                                            {t('k8s.resourceQuotaAndLimits')}
+                                            </button>
+                                            <button 
+                                            className="btn-text"
+                                              onClick={() => {
+                                              setEditingNamespace(ns)
+                                              setShowEditNamespaceModal(true)
+                                              }}
+                                            >
+                                              {t('common.edit')}
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button 
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                  if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                    dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                              ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                setSelectedNamespace(ns.name)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                {t('k8s.viewPods')}
+                                                </button>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                                  if (window.confirm(t('k8s.confirmDeleteNamespace'))) {
+                                                    // TODO: 实现删除命名空间
+                                                  }
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}
+                                                >
+                                                  {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          </div>
                       )}
                       {!loading && !selectedNamespace && namespaces.length > 0 && (
                         <Pagination
@@ -2109,13 +2252,13 @@ const K8sClusterDetail = () => {
                             setNamespacesPage(page)
                             fetchNamespaces()
                           }}
-                          onPageSizeChange={(newSize) => {
+                            onPageSizeChange={(newSize) => {
                             setNamespacesPageSize(newSize)
                             setNamespacesPage(1)
                             fetchNamespaces()
-                          }}
-                        />
-                      )}
+                            }}
+                          />
+                        )}
                       {!loading && selectedNamespace && pods.length > 0 && (
                         <Pagination
                           currentPage={podsPage}
@@ -2135,47 +2278,47 @@ const K8sClusterDetail = () => {
                       )}
                     </div>
                   )}
-                            </>
-                          )}
-                        </div>
-                          </div>
+                </>
+              )}
+            </div>
+          </div>
 
-            {/* 日志查看模态框 */}
+          {/* 日志查看模态框 */}
           {showLogsModal && (
             <div className="modal-overlay" onClick={() => setShowLogsModal(false)}>
               <div className="modal-content logs-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                   <h2>{t('k8s.podLogs')} - {editingPod?.name}</h2>
-                            <button
+                  <button
                     className="modal-close"
-                              onClick={() => {
+                    onClick={() => {
                       setShowLogsModal(false)
                       setEditingPod(null)
                       setPodLogs('')
                     }}
                   >
                     {t('common.close')}
-                            </button>
-                          </div>
+                  </button>
+                </div>
                 <div className="logs-container">
                   <pre className="logs-content">{podLogs || t('k8s.noLogs')}</pre>
-                                              </div>
+                </div>
                 <div className="modal-actions">
-                                <button
+                  <button
                     type="button"
                     className="btn-secondary"
-                                                  onClick={() => {
+                    onClick={() => {
                       setShowLogsModal(false)
                       setEditingPod(null)
                       setPodLogs('')
                     }}
                   >
                     {t('common.close')}
-                                                </button>
-                                              </div>
-                                        </div>
-                                      </div>
-                                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 编辑标签模态框 */}
           {showLabelsModal && (
@@ -2183,89 +2326,89 @@ const K8sClusterDetail = () => {
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                   <h2>{t('k8s.editLabels')} - {editingPod?.name}</h2>
-                              <button
+                  <button
                     className="modal-close"
-                                onClick={() => {
+                    onClick={() => {
                       setShowLabelsModal(false)
                       setEditingPod(null)
                       setEditingLabels({})
                     }}
                   >
                     {t('common.close')}
-                                  </button>
-                                </div>
+                  </button>
+                </div>
                 <div className="modal-body">
                   <div className="form-group">
                     <label>{t('k8s.labels')}</label>
                     <div className="labels-editor">
-                      {Object.entries(editingLabels).map(([key, value]) => (
-                        <div key={key} className="label-item">
-                          <input
-                            type="text"
-                            value={key}
-                                  onChange={(e) => {
-                              const newLabels = { ...editingLabels }
-                              delete newLabels[key]
-                              newLabels[e.target.value] = value
-                              setEditingLabels(newLabels)
-                            }}
-                            placeholder={t('k8s.labelKey')}
-                          />
-                          <span>=</span>
-                                <input
-                                  type="text"
-                            value={value}
-                            onChange={(e) => {
-                              setEditingLabels({ ...editingLabels, [key]: e.target.value })
-                            }}
-                            placeholder={t('k8s.labelValue')}
-                          />
-                                            <button 
+                    {Object.entries(editingLabels).map(([key, value]) => (
+                      <div key={key} className="label-item">
+                        <input
+                          type="text"
+                          value={key}
+                          onChange={(e) => {
+                            const newLabels = { ...editingLabels }
+                            delete newLabels[key]
+                            newLabels[e.target.value] = value
+                            setEditingLabels(newLabels)
+                          }}
+                          placeholder={t('k8s.labelKey')}
+                        />
+                        <span>=</span>
+                        <input
+                          type="text"
+                          value={value}
+                          onChange={(e) => {
+                            setEditingLabels({ ...editingLabels, [key]: e.target.value })
+                          }}
+                          placeholder={t('k8s.labelValue')}
+                        />
+                        <button
                             className="btn-text"
-                                              onClick={() => {
-                              const newLabels = { ...editingLabels }
-                              delete newLabels[key]
-                              setEditingLabels(newLabels)
-                            }}
-                          >
+                          onClick={() => {
+                            const newLabels = { ...editingLabels }
+                            delete newLabels[key]
+                            setEditingLabels(newLabels)
+                          }}
+                        >
                             {t('common.delete')}
-                                            </button>
-                                </div>
-                      ))}
-                                            <button 
+                        </button>
+                      </div>
+                    ))}
+                  <button
                         className="btn-text"
-                                              onClick={() => {
-                          setEditingLabels({ ...editingLabels, '': '' })
-                        }}
-                      >
-                        + {t('k8s.addLabel')}
-                                                </button>
+                    onClick={() => {
+                      setEditingLabels({ ...editingLabels, '': '' })
+                    }}
+                  >
+                    + {t('k8s.addLabel')}
+                  </button>
                                               </div>
                                             </div>
-                                          </div>
+                </div>
                 <div className="modal-actions">
-                                            <button 
+                  <button
                     type="button"
                     className="btn-secondary"
-                                              onClick={() => {
+                    onClick={() => {
                       setShowLabelsModal(false)
                       setEditingPod(null)
                       setEditingLabels({})
                     }}
                   >
                     {t('common.cancel')}
-                                            </button>
-                                            <button 
+                  </button>
+                  <button
                     type="button"
                     className="btn-primary"
                     onClick={handleSaveLabels}
                     disabled={loading}
                   >
                     {loading ? t('common.loading') : t('common.save')}
-                                                </button>
-                                              </div>
-                                            </div>
-                                          </div>
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* 编辑注解模态框 */}
@@ -2289,64 +2432,64 @@ const K8sClusterDetail = () => {
                   <div className="form-group">
                     <label>{t('k8s.annotations')}</label>
                     <div className="labels-editor">
-                      {Object.entries(editingAnnotations).map(([key, value]) => (
+                    {Object.entries(editingAnnotations).map(([key, value]) => (
                         <div key={key} className="label-item">
-                          <input
-                            type="text"
-                            value={key}
-                            onChange={(e) => {
-                              const newAnnotations = { ...editingAnnotations }
-                              delete newAnnotations[key]
-                              newAnnotations[e.target.value] = value
-                              setEditingAnnotations(newAnnotations)
-                            }}
-                            placeholder={t('k8s.annotationKey')}
-                          />
-                          <span>=</span>
-                          <input
-                            type="text"
-                            value={value}
-                            onChange={(e) => {
-                              setEditingAnnotations({ ...editingAnnotations, [key]: e.target.value })
-                            }}
-                            placeholder={t('k8s.annotationValue')}
-                          />
-                  <button
+                        <input
+                          type="text"
+                          value={key}
+                          onChange={(e) => {
+                            const newAnnotations = { ...editingAnnotations }
+                            delete newAnnotations[key]
+                            newAnnotations[e.target.value] = value
+                            setEditingAnnotations(newAnnotations)
+                          }}
+                          placeholder={t('k8s.annotationKey')}
+                        />
+                        <span>=</span>
+                        <input
+                          type="text"
+                          value={value}
+                          onChange={(e) => {
+                            setEditingAnnotations({ ...editingAnnotations, [key]: e.target.value })
+                          }}
+                          placeholder={t('k8s.annotationValue')}
+                        />
+                        <button
                             className="btn-text"
-                    onClick={() => {
-                              const newAnnotations = { ...editingAnnotations }
-                              delete newAnnotations[key]
-                              setEditingAnnotations(newAnnotations)
-                    }}
-                  >
+                          onClick={() => {
+                            const newAnnotations = { ...editingAnnotations }
+                            delete newAnnotations[key]
+                            setEditingAnnotations(newAnnotations)
+                          }}
+                        >
                             {t('common.delete')}
-                  </button>
-                        </div>
-                      ))}
+                        </button>
+                      </div>
+                    ))}
                   <button
                         className="btn-text"
                     onClick={() => {
-                          setEditingAnnotations({ ...editingAnnotations, '': '' })
-                          }}
-                        >
-                        + {t('k8s.addAnnotation')}
-                        </button>
+                      setEditingAnnotations({ ...editingAnnotations, '': '' })
+                    }}
+                  >
+                    + {t('k8s.addAnnotation')}
+                  </button>
                     </div>
                   </div>
                 </div>
                 <div className="modal-actions">
-                        <button
+                  <button
                     type="button"
                     className="btn-secondary"
-                          onClick={() => {
+                    onClick={() => {
                       setShowAnnotationsModal(false)
                       setEditingPod(null)
                       setEditingAnnotations({})
-                          }}
-                        >
+                    }}
+                  >
                     {t('common.cancel')}
-                        </button>
-                        <button
+                  </button>
+                  <button
                     type="button"
                     className="btn-primary"
                     onClick={handleSaveAnnotations}

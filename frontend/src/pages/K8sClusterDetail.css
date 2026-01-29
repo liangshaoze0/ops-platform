@@ -638,3 +638,152 @@
   background: #fef2f2;
   color: #dc2626;
 }
+
+/* 命名空间与配额页面样式 */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.section-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.section-actions-left {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.search-bar {
+  margin-bottom: 16px;
+}
+
+.search-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.search-controls-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 20%;
+}
+
+.search-type-select {
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.search-controls .search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.search-input-small {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.search-input-small:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.search-controls .search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.btn-search {
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: white;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btn-search:hover {
+  background: #f8f9fa;
+  border-color: #cbd5e0;
+  color: #334155;
+}
+
+.label-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #475569;
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+.status-icon {
+  display: inline-block;
+  margin-right: 4px;
+  color: #10b981;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.action-buttons .btn-text {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: #667eea;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.action-buttons .btn-text:hover {
+  color: #764ba2;
+}
+
+.action-buttons .btn-more {
+  padding: 4px 8px;
+  font-size: 16px;
+  line-height: 1;
+  color: #64748b;
+}
+
+.action-buttons .btn-more:hover {
+  color: #334155;
+}

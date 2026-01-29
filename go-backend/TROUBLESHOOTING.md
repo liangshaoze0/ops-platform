@@ -34,7 +34,17 @@ WHERE username = 'admin';
 -- 注意：这需要先运行Go程序生成bcrypt哈希
 ```
 
-**方法3：运行测试脚本**
+**方法3：运行重置密码脚本（推荐）**
+```bash
+cd go-backend
+# 重置为默认密码 admin
+go run scripts/reset_admin_password.go
+
+# 或者重置为自定义密码
+go run scripts/reset_admin_password.go your_new_password
+```
+
+**方法4：运行测试脚本**
 ```bash
 cd go-backend
 go run scripts/test_admin_login.go
