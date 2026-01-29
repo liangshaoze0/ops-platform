@@ -169,6 +169,74 @@ func (c *Client) GetNamespace(ctx context.Context, name string) (*corev1.Namespa
 	return namespace, nil
 }
 
+// CreateNamespace 创建命名空间
+func (c *Client) CreateNamespace(ctx context.Context, name string, labels map[string]string, deletionProtection bool) (*corev1.Namespace, error) {
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: labels,
+		},
+	}
+
+	// 如果启用删除保护，添加 finalizer
+	if deletionProtection {
+		namespace.Finalizers = []string{"kubernetes"}
+	}
+
+	created, err := c.clientset.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("创建命名空间失败: %w", err)
+	}
+	return created, nil
+}
+
+// UpdateNamespace 更新命名空间
+func (c *Client) UpdateNamespace(ctx context.Context, name string, labels map[string]string, deletionProtection bool) (*corev1.Namespace, error) {
+	// 先获取现有的命名空间
+	namespace, err := c.clientset.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("获取命名空间失败: %w", err)
+	}
+
+	// 更新标签
+	if namespace.Labels == nil {
+		namespace.Labels = make(map[string]string)
+	}
+	for k, v := range labels {
+		namespace.Labels[k] = v
+	}
+
+	// 更新删除保护（finalizer）
+	if deletionProtection {
+		// 检查是否已有 finalizer
+		hasFinalizer := false
+		for _, f := range namespace.Finalizers {
+			if f == "kubernetes" {
+				hasFinalizer = true
+				break
+			}
+		}
+		if !hasFinalizer {
+			namespace.Finalizers = append(namespace.Finalizers, "kubernetes")
+		}
+	} else {
+		// 移除 finalizer
+		finalizers := []string{}
+		for _, f := range namespace.Finalizers {
+			if f != "kubernetes" {
+				finalizers = append(finalizers, f)
+			}
+		}
+		namespace.Finalizers = finalizers
+	}
+
+	updated, err := c.clientset.CoreV1().Namespaces().Update(ctx, namespace, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("更新命名空间失败: %w", err)
+	}
+	return updated, nil
+}
+
 // GetPods 获取Pod列表（可选命名空间）
 func (c *Client) GetPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
 	var pods *corev1.PodList

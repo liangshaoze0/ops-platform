@@ -626,6 +626,150 @@ func (h *K8sHandler) GetNamespace(c *gin.Context) {
 	utils.Success(c, namespaceObj)
 }
 
+// CreateNamespace 创建命名空间
+func (h *K8sHandler) CreateNamespace(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Name              string            `json:"name" binding:"required"`
+		DeletionProtection bool             `json:"deletionProtection"`
+		Labels            map[string]string `json:"labels"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+
+	// 验证命名空间名称格式
+	if len(req.Name) < 1 || len(req.Name) > 63 {
+		utils.BadRequest(c, "命名空间名称长度必须在1-63个字符之间")
+		return
+	}
+
+	// 创建K8s客户端
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx := context.Background()
+	
+	// 如果 labels 为 nil，初始化为空 map
+	if req.Labels == nil {
+		req.Labels = make(map[string]string)
+	}
+
+	namespace, err := client.CreateNamespace(ctx, req.Name, req.Labels, req.DeletionProtection)
+	if err != nil {
+		utils.InternalServerError(c, "创建命名空间失败: "+err.Error())
+		return
+	}
+
+	// 转换为简化的命名空间信息
+	nsInfo := map[string]interface{}{
+		"name":        namespace.Name,
+		"status":      string(namespace.Status.Phase),
+		"created_at":  namespace.CreationTimestamp.Time,
+		"labels":      namespace.Labels,
+		"annotations": namespace.Annotations,
+	}
+
+	utils.Success(c, nsInfo)
+}
+
+// UpdateNamespace 更新命名空间
+func (h *K8sHandler) UpdateNamespace(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	namespaceName := c.Param("namespace")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Name              string            `json:"name" binding:"required"`
+		DeletionProtection bool             `json:"deletionProtection"`
+		Labels            map[string]string `json:"labels"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+
+	// 验证命名空间名称格式
+	if len(req.Name) < 1 || len(req.Name) > 63 {
+		utils.BadRequest(c, "命名空间名称长度必须在1-63个字符之间")
+		return
+	}
+
+	// 如果名称不同，不允许修改（Kubernetes 不允许修改命名空间名称）
+	if req.Name != namespaceName {
+		utils.BadRequest(c, "不允许修改命名空间名称")
+		return
+	}
+
+	// 创建K8s客户端
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx := context.Background()
+	
+	// 如果 labels 为 nil，初始化为空 map
+	if req.Labels == nil {
+		req.Labels = make(map[string]string)
+	}
+
+	namespace, err := client.UpdateNamespace(ctx, namespaceName, req.Labels, req.DeletionProtection)
+	if err != nil {
+		utils.InternalServerError(c, "更新命名空间失败: "+err.Error())
+		return
+	}
+
+	// 转换为简化的命名空间信息
+	nsInfo := map[string]interface{}{
+		"name":        namespace.Name,
+		"status":      string(namespace.Status.Phase),
+		"created_at":  namespace.CreationTimestamp.Time,
+		"labels":      namespace.Labels,
+		"annotations": namespace.Annotations,
+	}
+
+	utils.Success(c, nsInfo)
+}
+
 // 辅助函数：获取节点状态
 func getNodeStatus(node *corev1.Node) string {
 	for _, condition := range node.Status.Conditions {

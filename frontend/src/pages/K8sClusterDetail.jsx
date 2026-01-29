@@ -154,6 +154,16 @@ const K8sClusterDetail = () => {
   const [showQuotaModal, setShowQuotaModal] = useState(false)
   const [editingNamespace, setEditingNamespace] = useState(null)
   
+  // 创建命名空间状态
+  const [newNamespaceName, setNewNamespaceName] = useState('')
+  const [newNamespaceDeletionProtection, setNewNamespaceDeletionProtection] = useState(false)
+  const [newNamespaceLabels, setNewNamespaceLabels] = useState({})
+  
+  // 编辑命名空间状态
+  const [editNamespaceName, setEditNamespaceName] = useState('')
+  const [editNamespaceDeletionProtection, setEditNamespaceDeletionProtection] = useState(false)
+  const [editNamespaceLabels, setEditNamespaceLabels] = useState({})
+  
   // 资源配额状态
   const [resourceQuotaExpanded, setResourceQuotaExpanded] = useState(true)
   const [limitRangeExpanded, setLimitRangeExpanded] = useState(true)
@@ -631,6 +641,107 @@ const K8sClusterDetail = () => {
     } catch (err) {
       console.error('获取命名空间列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchNamespacesFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 编辑命名空间
+  const handleEditNamespace = async () => {
+    if (!editingNamespace || !editNamespaceName.trim()) {
+      setError(t('k8s.namespaceNameRequired'))
+      return
+    }
+
+    // 验证命名空间名称格式
+    const nameRegex = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/
+    if (!nameRegex.test(editNamespaceName) || editNamespaceName.length < 1 || editNamespaceName.length > 63) {
+      setError(t('k8s.namespaceNameInvalid'))
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 过滤掉空的标签键
+      const filteredLabels = {}
+      Object.entries(editNamespaceLabels).forEach(([key, value]) => {
+        if (key.trim() && value.trim()) {
+          filteredLabels[key.trim()] = value.trim()
+        }
+      })
+      
+      const payload = {
+        name: editNamespaceName.trim(),
+        deletionProtection: editNamespaceDeletionProtection,
+        labels: filteredLabels,
+      }
+
+      await api.put(`/k8s/clusters/${id}/namespaces/${editingNamespace.name}`, payload)
+      
+      setSuccess(t('k8s.editNamespaceSuccess'))
+      setShowEditNamespaceModal(false)
+      setEditingNamespace(null)
+      setEditNamespaceName('')
+      setEditNamespaceDeletionProtection(false)
+      setEditNamespaceLabels({})
+      
+      // 刷新命名空间列表
+      fetchNamespaces()
+    } catch (err) {
+      console.error('编辑命名空间失败:', err)
+      setError(err.response?.data?.message || t('k8s.editNamespaceFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 创建命名空间
+  const handleCreateNamespace = async () => {
+    if (!newNamespaceName.trim()) {
+      setError(t('k8s.namespaceNameRequired'))
+      return
+    }
+
+    // 验证命名空间名称格式
+    const nameRegex = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/
+    if (!nameRegex.test(newNamespaceName) || newNamespaceName.length < 1 || newNamespaceName.length > 63) {
+      setError(t('k8s.namespaceNameInvalid'))
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 过滤掉空的标签键
+      const filteredLabels = {}
+      Object.entries(newNamespaceLabels).forEach(([key, value]) => {
+        if (key.trim() && value.trim()) {
+          filteredLabels[key.trim()] = value.trim()
+        }
+      })
+      
+      const payload = {
+        name: newNamespaceName.trim(),
+        deletionProtection: newNamespaceDeletionProtection,
+        labels: filteredLabels,
+      }
+
+      await api.post(`/k8s/clusters/${id}/namespaces`, payload)
+      
+      setSuccess(t('k8s.createNamespaceSuccess'))
+      setShowCreateNamespaceModal(false)
+      setNewNamespaceName('')
+      setNewNamespaceDeletionProtection(false)
+      setNewNamespaceLabels({})
+      
+      // 刷新命名空间列表
+      fetchNamespaces()
+    } catch (err) {
+      console.error('创建命名空间失败:', err)
+      setError(err.response?.data?.message || t('k8s.createNamespaceFailed'))
     } finally {
       setLoading(false)
     }
@@ -2342,34 +2453,47 @@ const K8sClusterDetail = () => {
                                               ⋮
                                               </button>
                                               <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                            <button 
+                                                  disabled
+                                                  style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                                              onClick={() => {
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}
+                                                >
+                                                  {t('k8s.monitoring')}
+                                                </button>
                                                 <button onClick={() => {
-                                                setSelectedNamespace(ns.name)
+                                                  handleEditNamespaceYaml(ns)
                                                   document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                                 }}>
-                                                {t('k8s.viewPods')}
+                                                  {t('k8s.yamlEdit')}
                                                 </button>
                                                 <button
                                                   className="danger"
                                                   onClick={() => {
-                                                  if (window.confirm(t('k8s.confirmDeleteNamespace'))) {
-                                                    // TODO: 实现删除命名空间
-                                                  }
+                                                    handleDeleteNamespace(ns)
                                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                                   }}
                                                 >
                                                   {t('common.delete')}
                                                 </button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </td>
-                                    </tr>
+                                                  <button onClick={() => {
+                                                  handleToggleNamespaceDeletionProtection(ns)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}>
+                                                  {t('k8s.enableDeletionProtection')}
+                  </button>
+                </div>
+              </div>
+            </div>
+                                </td>
+                              </tr>
                                   ))
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                          </div>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                        </div>
                       )}
                       {!loading && !selectedNamespace && namespaces.length > 0 && (
                         <Pagination
@@ -2820,7 +2944,7 @@ const K8sClusterDetail = () => {
                             <label>{t('k8s.storageClaimQuantity')}</label>
                             <div className="quota-input-group">
                               <span className="quota-label">{t('k8s.maxUsage')}</span>
-                              <input
+                    <input
                                 type="text"
                                 className="quota-input"
                                 value={quotaData.storageClaim}
@@ -2828,8 +2952,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">个</span>
-                </div>
                   </div>
+                </div>
 
                           {/* Storage Space */}
                           <div className="quota-field">
@@ -2852,8 +2976,8 @@ const K8sClusterDetail = () => {
                                 <option value="Mi">Mi</option>
                               </select>
                 </div>
-                  </div>
-                </div>
+              </div>
+            </div>
 
                         {/* 其他资源限制 */}
                         <div className="quota-subsection">
@@ -2872,8 +2996,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">个</span>
-                            </div>
-                          </div>
+                </div>
+                </div>
 
                           {/* Container Group Quantity */}
                           <div className="quota-field">
@@ -2888,8 +3012,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">个</span>
-                            </div>
-                          </div>
+                </div>
+                </div>
 
                           {/* Service Quantity */}
                           <div className="quota-field">
@@ -2904,8 +3028,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">个</span>
-                  </div>
-                  </div>
+              </div>
+            </div>
 
                           {/* Load Balancer Service Quantity */}
                           <div className="quota-field">
@@ -2920,8 +3044,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">个</span>
-                        </div>
-                    </div>
+                </div>
+                  </div>
 
                           {/* Secret Quantity */}
                           <div className="quota-field">
@@ -2936,11 +3060,11 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">个</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
                   </div>
 
                     {/* Limit Range 部分 */}
@@ -2984,8 +3108,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">核</span>
-                            </div>
-                          </div>
+                </div>
+                  </div>
 
                           {/* Memory Limit */}
                           <div className="quota-field">
@@ -3006,9 +3130,9 @@ const K8sClusterDetail = () => {
                                 <option value="Gi">Gi</option>
                                 <option value="Mi">Mi</option>
                               </select>
-                            </div>
-                          </div>
-                        </div>
+                </div>
+                  </div>
+                </div>
 
                         {/* 资源申请 */}
                         <div className="quota-subsection">
@@ -3026,8 +3150,8 @@ const K8sClusterDetail = () => {
                                 placeholder="0"
                               />
                               <span className="quota-unit">核</span>
-                            </div>
-                          </div>
+                </div>
+                  </div>
 
                           {/* Memory Limit */}
                           <div className="quota-field">
@@ -3048,12 +3172,12 @@ const K8sClusterDetail = () => {
                                 <option value="Gi">Gi</option>
                                 <option value="Mi">Mi</option>
                               </select>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+                </div>
                   </div>
                 </div>
                 <div className="modal-actions">
@@ -3074,6 +3198,305 @@ const K8sClusterDetail = () => {
                     disabled={loading}
                   >
                     {t('common.confirm')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 创建命名空间模态框 */}
+          {showCreateNamespaceModal && (
+            <div className="modal-overlay" onClick={() => setShowCreateNamespaceModal(false)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{t('k8s.createNamespace')}</h2>
+                  <button
+                    className="modal-close"
+                    onClick={() => {
+                      setShowCreateNamespaceModal(false)
+                      setNewNamespaceName('')
+                      setNewNamespaceDeletionProtection(false)
+                      setNewNamespaceLabels({})
+                      setError('')
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {/* 命名空间名称 */}
+                  <div className="form-group">
+                    <label>
+                      <span className="required">*</span> {t('k8s.namespaceName')}
+                    </label>
+                    <div className="input-with-counter">
+                    <input
+                        type="text"
+                        className="form-input"
+                        value={newNamespaceName}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value.length <= 63) {
+                            setNewNamespaceName(value)
+                          }
+                        }}
+                        placeholder={t('k8s.namespaceNamePlaceholder')}
+                        maxLength={63}
+                      />
+                      <span className="char-counter">{newNamespaceName.length}/63</span>
+                  </div>
+                    <div className="form-hint">
+                      {t('k8s.namespaceNameRule')}
+                    </div>
+                  </div>
+
+                  {/* 删除保护 */}
+                  <div className="form-group">
+                    <label>{t('k8s.deletionProtection')}</label>
+                    <div className="toggle-switch-container">
+                      <label className="toggle-switch">
+                    <input
+                          type="checkbox"
+                          checked={newNamespaceDeletionProtection}
+                          onChange={(e) => setNewNamespaceDeletionProtection(e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                      <span className="toggle-label">
+                        {t('k8s.enableDeletionProtection')}
+                        <svg className="help-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M7 10V7M7 4H7.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </span>
+                  </div>
+                  </div>
+
+                  {/* 命名空间标签 */}
+                  <div className="form-group">
+                    <label>{t('k8s.namespaceTags')}</label>
+                    <div className="labels-editor">
+                      {Object.entries(newNamespaceLabels).map(([key, value]) => (
+                        <div key={key} className="label-item">
+                          <input
+                            type="text"
+                            value={key}
+                            onChange={(e) => {
+                              const newLabels = { ...newNamespaceLabels }
+                              delete newLabels[key]
+                              newLabels[e.target.value] = value
+                              setNewNamespaceLabels(newLabels)
+                            }}
+                            placeholder={t('k8s.variableName')}
+                            className="label-input"
+                          />
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => {
+                              setNewNamespaceLabels({ ...newNamespaceLabels, [key]: e.target.value })
+                            }}
+                            placeholder={t('k8s.variableValue')}
+                            className="label-input"
+                          />
+                          <button
+                            className="btn-text btn-delete"
+                            onClick={() => {
+                              const newLabels = { ...newNamespaceLabels }
+                              delete newLabels[key]
+                              setNewNamespaceLabels(newLabels)
+                            }}
+                          >
+                            {t('common.delete')}
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        className="btn-text btn-add-label"
+                        onClick={() => {
+                          setNewNamespaceLabels({ ...newNamespaceLabels, '': '' })
+                        }}
+                      >
+                        + {t('k8s.addNamespaceTag')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowCreateNamespaceModal(false)
+                      setNewNamespaceName('')
+                      setNewNamespaceDeletionProtection(false)
+                      setNewNamespaceLabels({})
+                      setError('')
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleCreateNamespace}
+                    disabled={loading || !newNamespaceName.trim()}
+                  >
+                    {loading ? t('common.loading') : t('common.confirm')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 编辑命名空间模态框 */}
+          {showEditNamespaceModal && editingNamespace && (
+            <div className="modal-overlay" onClick={() => {
+              setShowEditNamespaceModal(false)
+              setEditingNamespace(null)
+              setEditNamespaceName('')
+              setEditNamespaceDeletionProtection(false)
+              setEditNamespaceLabels({})
+              setError('')
+            }}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{t('k8s.editNamespace')}</h2>
+                  <button
+                    className="modal-close"
+                    onClick={() => {
+                      setShowEditNamespaceModal(false)
+                      setEditingNamespace(null)
+                      setEditNamespaceName('')
+                      setEditNamespaceDeletionProtection(false)
+                      setEditNamespaceLabels({})
+                      setError('')
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {/* 命名空间名称 */}
+                  <div className="form-group">
+                    <label>
+                      <span className="required">*</span> {t('k8s.namespaceName')}
+                    </label>
+                    <div className="input-with-counter">
+                    <input
+                        type="text"
+                        className="form-input"
+                        value={editNamespaceName}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value.length <= 63) {
+                            setEditNamespaceName(value)
+                          }
+                        }}
+                        placeholder={t('k8s.namespaceNamePlaceholder')}
+                        maxLength={63}
+                      />
+                      <span className="char-counter">{editNamespaceName.length}/63</span>
+                </div>
+                    <div className="form-hint">
+                      {t('k8s.namespaceNameRule')}
+                </div>
+              </div>
+
+                  {/* 删除保护 */}
+                  <div className="form-group">
+                    <label>{t('k8s.deletionProtection')}</label>
+                    <div className="toggle-switch-container">
+                      <label className="toggle-switch">
+                    <input
+                          type="checkbox"
+                          checked={editNamespaceDeletionProtection}
+                          onChange={(e) => setEditNamespaceDeletionProtection(e.target.checked)}
+                        />
+                        <span className="toggle-slider"></span>
+                      </label>
+                      <span className="toggle-label">
+                        {t('k8s.enableDeletionProtection')}
+                        <svg className="help-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M7 10V7M7 4H7.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </span>
+                  </div>
+                  </div>
+
+                  {/* 命名空间标签 */}
+                  <div className="form-group">
+                    <label>{t('k8s.namespaceTags')}</label>
+                    <div className="labels-editor">
+                      {Object.entries(editNamespaceLabels).map(([key, value]) => (
+                        <div key={key} className="label-item">
+                    <input
+                            type="text"
+                            value={key}
+                            onChange={(e) => {
+                              const newLabels = { ...editNamespaceLabels }
+                              delete newLabels[key]
+                              newLabels[e.target.value] = value
+                              setEditNamespaceLabels(newLabels)
+                            }}
+                            placeholder={t('k8s.variableName')}
+                            className="label-input"
+                          />
+                    <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => {
+                              setEditNamespaceLabels({ ...editNamespaceLabels, [key]: e.target.value })
+                            }}
+                            placeholder={t('k8s.variableValue')}
+                            className="label-input"
+                          />
+                  <button
+                            className="btn-text btn-delete"
+                    onClick={() => {
+                              const newLabels = { ...editNamespaceLabels }
+                              delete newLabels[key]
+                              setEditNamespaceLabels(newLabels)
+                            }}
+                          >
+                            {t('common.delete')}
+                  </button>
+                </div>
+                      ))}
+                  <button
+                        className="btn-text btn-add-label"
+                    onClick={() => {
+                          setEditNamespaceLabels({ ...editNamespaceLabels, '': '' })
+                    }}
+                  >
+                        + {t('k8s.addNamespaceTag')}
+                  </button>
+                </div>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowEditNamespaceModal(false)
+                      setEditingNamespace(null)
+                      setEditNamespaceName('')
+                      setEditNamespaceDeletionProtection(false)
+                      setEditNamespaceLabels({})
+                      setError('')
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleEditNamespace}
+                    disabled={loading || !editNamespaceName.trim()}
+                  >
+                    {loading ? t('common.loading') : t('common.confirm')}
                   </button>
                 </div>
               </div>
