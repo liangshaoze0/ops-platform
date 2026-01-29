@@ -154,6 +154,7 @@ const K8sClusterDetail = () => {
   const [showQuotaModal, setShowQuotaModal] = useState(false)
   const [editingNamespace, setEditingNamespace] = useState(null)
   const [selectedDeployments, setSelectedDeployments] = useState([])
+  const [selectedStatefulSets, setSelectedStatefulSets] = useState([])
   
   // 创建 Deployment 状态
   const [showCreateDeploymentModal, setShowCreateDeploymentModal] = useState(false)
@@ -164,6 +165,50 @@ const K8sClusterDetail = () => {
     namespace: 'default',
     replicas: 2,
     type: 'Deployment',
+    labels: {},
+    annotations: {},
+    timeZoneSync: false,
+    // 容器配置
+    containers: [{
+      name: 'container-1',
+      image: '',
+      imagePullPolicy: 'IfNotPresent',
+      imageSecret: '',
+      cpuLimit: '',
+      memoryLimit: '',
+      ephemeralStorageLimit: '',
+      gpuType: 'none',
+      cpuRequest: '0.25',
+      memoryRequest: '512Mi',
+      ephemeralStorageRequest: '',
+      stdin: false,
+      tty: false,
+      privileged: false,
+      initContainer: false,
+      ports: [],
+      envVars: [],
+    }],
+    // 高级配置
+    hpaEnabled: false,
+    cronHpaEnabled: false,
+    upgradeStrategy: false,
+    nodeAffinity: [],
+    podAffinity: [],
+    podAntiAffinity: [],
+    tolerations: [],
+    podLabels: {},
+    podAnnotations: {},
+  })
+  
+  // 创建 StatefulSet 状态
+  const [showCreateStatefulSetModal, setShowCreateStatefulSetModal] = useState(false)
+  const [createStatefulSetStep, setCreateStatefulSetStep] = useState(1)
+  const [createStatefulSetData, setCreateStatefulSetData] = useState({
+    // 基本信息
+    name: '',
+    namespace: 'default',
+    replicas: 2,
+    type: 'StatefulSet',
     labels: {},
     annotations: {},
     timeZoneSync: false,
@@ -2082,6 +2127,12 @@ const K8sClusterDetail = () => {
     }
   }
 
+  const handleScaleStatefulSet = async (statefulSet) => {
+    setScalingStatefulSet(statefulSet)
+    setScaleStatefulSetReplicas(statefulSet.replicas || 1)
+    setShowScaleStatefulSetModal(true)
+  }
+
   // 处理Deployment YAML编辑
   const handleEditDeploymentYaml = async (deployment) => {
     try {
@@ -3068,10 +3119,10 @@ const K8sClusterDetail = () => {
                                               详情
                               </button>
                                             <button className="btn-text" onClick={() => handleEditDeploymentLabels(d)}>
-                                              编辑
+                                {t('common.edit')}
                               </button>
                                             <button className="btn-text" onClick={() => handleScaleDeployment(d)}>
-                                              伸缩
+                                {t('k8s.scale')}
                               </button>
                               <div className="action-dropdown">
                                 <button 
@@ -3091,32 +3142,117 @@ const K8sClusterDetail = () => {
                                 </button>
                                 <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
                                   <button onClick={() => {
-                                                  handleRedeploy(d)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 监控功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.monitoring')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 智能优化功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.intelligentOptimization')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleEditDeploymentYaml(d)
                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                   }}>
-                                                  重新部署
+                                    {t('k8s.yamlEdit')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleRedeploy(d)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.redeploy')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleEditDeploymentLabels(d)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.editLabels')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleEditDeploymentAnnotations(d)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.editAnnotations')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 节点亲和性功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.nodeAffinity')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 弹性伸缩功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.elasticScaling')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 调度容忍功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.schedulingToleration')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 资源画像功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.resourceProfile')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleDeploymentClick(d)
+                                    setTimeout(() => setDeploymentDetailTab('cost'), 100)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.costInsight')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 升级策略功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.upgradeStrategy')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 复制创建功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.cloneCreate')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 回滚功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.rollback')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleViewDeploymentLogs(d)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.logs')}
                                   </button>
                                                 <button className="danger" onClick={() => {
                                                   handleDeleteDeployment(d)
-                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                      document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                   }}>
                                     {t('common.delete')}
                                   </button>
                                 </div>
                               </div>
                         </div>
-                                            </td>
-                                          </tr>
+                                        </td>
+                                      </tr>
                                         )
                                   })}
                                 {deployments.length === 0 && (
                                   <tr>
                                     <td colSpan="9" className="empty-state">{t('k8s.noDeployments')}</td>
                                         </tr>
-                                        )}
-                                      </tbody>
-                                    </table>
-                      </div>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
 
                           {!loading && deployments.length > 0 && (
                         <Pagination
@@ -3134,8 +3270,336 @@ const K8sClusterDetail = () => {
                                 fetchDeployments(selectedWorkloadNamespace || '')
                           }}
                         />
+                                            )}
+                                      </div>
                                     )}
-                                </div>
+
+                      {/* 有状态 StatefulSet 列表 */}
+                      {workloadType === 'statefulsets' && !searchParams.get('view') && (
+                        <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>有状态 <span className="deployment-subtitle">StatefulSet</span></h2>
+                                  </div>
+                                  </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                            <button
+                                className="btn-primary" 
+                                onClick={() => setShowCreateStatefulSetModal(true)}
+                            >
+                                使用镜像创建
+                            </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                            </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedWorkloadNamespace}
+                                  onChange={(e) => setSelectedWorkloadNamespace(e.target.value)}
+                                >
+                                  <option value="">{t('k8s.allNamespaces')}</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">{t('k8s.name')}</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                <input
+                                    className="toolbar-search-input"
+                                    placeholder={t('k8s.searchPlaceholder')}
+                                  value={workloadSearchTerm}
+                                  onChange={(e) => setWorkloadSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchStatefulSets(selectedWorkloadNamespace || '')
+                                      }
+                                    }}
+                                  />
+                            <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchStatefulSets(selectedWorkloadNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                            </button>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="icon-btn" disabled title="设置">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.56 3.76 2.2 2.2 0 0 1-1.56-.64l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V22a2.2 2.2 0 0 1-4.4 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 1 1-3.12-3.12l.04-.04A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H2a2.2 2.2 0 0 1 0-4.4h-.06A1.8 1.8 0 0 0 3.6 8.4a1.8 1.8 0 0 0 .36-1.98l-.04-.04A2.2 2.2 0 1 1 7.04 3.2l.04.04A1.8 1.8 0 0 0 9.06 3.6a1.8 1.8 0 0 0 1.1-1.66V2a2.2 2.2 0 0 1 4.4 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 1 1 3.12 3.12l-.04.04A1.8 1.8 0 0 0 20.4 8.4a1.8 1.8 0 0 0 1.66 1.1H22a2.2 2.2 0 0 1 0 4.4h-.06a1.8 1.8 0 0 0-1.66 1.1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </button>
+                            <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchStatefulSets(selectedWorkloadNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </button>
+                              </div>
+                            </div>
+                            
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                    <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedStatefulSets.length === statefulSets.length && statefulSets.length > 0}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedStatefulSets(statefulSets.map(s => `${s.namespace}/${s.name}`))
+                                        } else {
+                                          setSelectedStatefulSets([])
+                                        }
+                                      }}
+                                    />
+                                    </th>
+                                  <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>标签</th>
+                                  <th>容器组数量</th>
+                                  <th>{t('k8s.image')}</th>
+                                  <th>{t('k8s.createdAt')}</th>
+                                  <th>{t('k8s.updatedAt')}</th>
+                                  <th>{t('common.actions')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {statefulSets
+                                  .filter((s) => {
+                                    if (!workloadSearchTerm) return true
+                                    return (s.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                  })
+                                  .map((s) => {
+                                    const key = `${s.namespace}/${s.name}`
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedStatefulSets.includes(key)}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedStatefulSets([...selectedStatefulSets, key])
+                                              } else {
+                                                setSelectedStatefulSets(selectedStatefulSets.filter(x => x !== key))
+                                              }
+                                            }}
+                                          />
+                                            </td>
+                                        <td className="name-cell">
+                                <button
+                                            className="deployment-link"
+                                            onClick={() => handleStatefulSetClick(s)}
+                                            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}
+                                          >
+                                            {s.name}
+                                </button>
+                                            </td>
+                                        <td>{s.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {s.labels && Object.keys(s.labels).length > 0 ? (
+                                            <div className="labels-container">
+                                              {Object.entries(s.labels).slice(0, 3).map(([key, value]) => (
+                                                <span key={key} className="label-tag">
+                                                  {key}:{value}
+                                        </span>
+                                              ))}
+                                              {Object.keys(s.labels).length > 3 && (
+                                                <span className="label-more">+{Object.keys(s.labels).length - 3}</span>
+                                    )}
+                                          </div>
+                                          ) : (
+                                            '-'
+                                          )}
+                                        </td>
+                                      <td>
+                                          {(s.readyReplicas ?? s.ready_replicas ?? 0)}/{(s.replicas ?? 0)}
+                                        </td>
+                                        <td className="images-cell">
+                                          {s.image || (Array.isArray(s.images) && s.images.length ? s.images[0] : '-')}
+                                            </td>
+                                        <td>{s.created_at || s.createdAt ? new Date(s.created_at || s.createdAt).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>{s.updated_at || s.updatedAt ? new Date(s.updated_at || s.updatedAt).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => handleStatefulSetClick(s)}>
+                                              详情
+                                            </button>
+                                            <button className="btn-text" onClick={() => handleEditStatefulSetLabels(s)}>
+                                              {t('common.edit')}
+                                            </button>
+                                            <button className="btn-text" onClick={() => handleScaleStatefulSet(s)}>
+                                              {t('k8s.scale')}
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button 
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                    dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 监控功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.monitoring')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 智能优化功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.intelligentOptimization')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditStatefulSetYaml(s)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                    {t('k8s.yamlEdit')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleRedeployStatefulSet(s)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                    {t('k8s.redeploy')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditStatefulSetLabels(s)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditStatefulSetAnnotations(s)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editAnnotations')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 节点亲和性功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.nodeAffinity')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 弹性伸缩功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.elasticScaling')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 调度容忍功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.schedulingToleration')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 资源画像功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.resourceProfile')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleStatefulSetClick(s)
+                                    setTimeout(() => setStatefulSetDetailTab('cost'), 100)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                    {t('k8s.costInsight')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 升级策略功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.upgradeStrategy')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 复制创建功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.cloneCreate')}
+                                                </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 回滚功能暂不开放
+                                  }} disabled>
+                                    {t('k8s.rollback')}
+                                  </button>
+                                  <button onClick={() => {
+                                    handleViewStatefulSetLogs(s)
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.logs')}
+                                  </button>
+                                                <button className="danger" onClick={() => {
+                                                  handleDeleteStatefulSet(s)
+                                      document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                    </tr>
+                                    )
+                                  })}
+                                {statefulSets.length === 0 && (
+                                  <tr>
+                                    <td colSpan="9" className="empty-state">{t('k8s.noStatefulSets')}</td>
+                                        </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && statefulSets.length > 0 && (
+                        <Pagination
+                          currentPage={workloadsPage}
+                          totalPages={Math.ceil(workloadsTotal / workloadsPageSize)}
+                          totalItems={workloadsTotal}
+                          pageSize={workloadsPageSize}
+                              onPageChange={(page) => {
+                                setWorkloadsPage(page)
+                                fetchStatefulSets(selectedWorkloadNamespace || '')
+                              }}
+                          onPageSizeChange={(newSize) => {
+                            setWorkloadsPageSize(newSize)
+                            setWorkloadsPage(1)
+                                fetchStatefulSets(selectedWorkloadNamespace || '')
+                          }}
+                        />
+                                            )}
+                                          </div>
                       )}
 
                       {/* Deployment 详情视图 */}
@@ -3144,43 +3608,155 @@ const K8sClusterDetail = () => {
                           {/* 头部 */}
                           <div className="deployment-detail-header">
                             <div className="deployment-detail-header-left">
-                            <button
+                                            <button 
                                 className="back-button"
                                 onClick={handleBackFromDeploymentDetail}
                                 title={t('common.back')}
-                            >
+                              >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                                   <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                 </svg>
-                            </button>
+                                            </button>
                               <h1 className="deployment-detail-title">{deploymentDetail?.name || selectedDeployment?.name || '-'}</h1>
                             </div>
                             <div className="deployment-detail-header-right">
                               <button className="btn-primary" onClick={() => handleEditDeploymentLabels(selectedDeployment)}>
-                                {t('common.edit')}
-                            </button>
+                                              {t('common.edit')}
+                                            </button>
                               <button className="btn-primary" onClick={() => handleScaleDeployment(selectedDeployment)}>
-                                {t('k8s.scale')}
-                            </button>
+                                              {t('k8s.scale')}
+                                            </button>
                               <button className="btn-primary" onClick={() => handleEditDeploymentYaml(selectedDeployment)}>
                                 YAML {t('common.edit')}
-                            </button>
-                              <div className="action-dropdown">
-                                <button className="btn-primary">
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button 
+                                  className="btn-primary"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                      if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                    const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                    dropdown.classList.toggle('show')
+                                                }}
+                                              >
                                   {t('common.more')} ▼
-                            </button>
-                                <div className="dropdown-menu">
-                                  <button onClick={() => handleRedeploy(selectedDeployment)}>
-                                    {t('k8s.redeploy')}
-                            </button>
-                                  <button className="danger" onClick={() => handleDeleteDeployment(selectedDeployment)}>
-                                    {t('common.delete')}
-                            </button>
-                                </div>
-                              </div>
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 监控功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.monitoring')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 智能优化功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.intelligentOptimization')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditDeploymentYaml(selectedDeployment)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.yamlEdit')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleRedeploy(selectedDeployment)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.redeploy')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditDeploymentLabels(selectedDeployment)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditDeploymentAnnotations(selectedDeployment)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editAnnotations')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 节点亲和性功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.nodeAffinity')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 弹性伸缩功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.elasticScaling')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 调度容忍功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.schedulingToleration')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 资源画像功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.resourceProfile')}
+                                                </button>
+                                                <button onClick={() => {
+                                    setDeploymentDetailTab('cost')
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                    {t('k8s.costInsight')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 升级策略功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.upgradeStrategy')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 复制创建功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.cloneCreate')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 回滚功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.rollback')}
+                                                </button>
+                                                <button onClick={() => {
+                                    setDeploymentDetailTab('logs')
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.logs')}
+                                                </button>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                      handleDeleteDeployment(selectedDeployment)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}
+                                                >
+                                                  {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
                             <button
                                 className="icon-btn"
-                                onClick={() => loadDeploymentDetail(selectedDeployment)}
+                                onClick={async () => {
+                                  if (selectedDeployment) {
+                                    // 重置加载状态，强制刷新
+                                    isLoadingDeploymentRef.current = false
+                                    loadedDeploymentRef.current = ''
+                                    await loadDeploymentDetail(selectedDeployment)
+                                  }
+                                }}
                                 title={t('common.refresh')}
                             >
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -3188,76 +3764,76 @@ const K8sClusterDetail = () => {
                                   <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                 </svg>
                             </button>
-                        </div>
+                          </div>
                           </div>
 
                           {/* 主要内容区域 */}
                           <div className="deployment-detail-content">
                             {/* 基本信息 - 两列布局 */}
                             {deploymentDetail ? (
-                              <div className="info-section">
+                          <div className="info-section">
                                 <h3>{t('k8s.basicInfo')}</h3>
                                 <div className="info-grid-two-columns">
                                   {/* 左列 */}
                                   <div className="info-column-left">
-                                      <div className="info-item">
+                                <div className="info-item">
                                       <label>{t('k8s.name')}</label>
                                       <span>{deploymentDetail.name || selectedDeployment?.name || '-'}</span>
-                                      </div>
-                                      <div className="info-item">
+                          </div>
+                                <div className="info-item">
                                       <label>{t('k8s.namespace')}</label>
                                       <span>{deploymentDetail.namespace || selectedDeployment?.namespace || '-'}</span>
-                                      </div>
-                                      <div className="info-item">
+                                            </div>
+                                <div className="info-item">
                                       <label>{t('k8s.selector')}</label>
                                       <div className="selector-tags">
                                         {deploymentDetail.selector && Object.entries(deploymentDetail.selector).map(([key, value]) => (
                                           <span key={key} className="selector-tag">{key}:{value}</span>
                                         ))}
                                         {(!deploymentDetail.selector || Object.keys(deploymentDetail.selector).length === 0) && '-'}
-                                      </div>
-                                      </div>
+                                        </div>
+                                              </div>
                                     {deploymentDetail.annotations && Object.keys(deploymentDetail.annotations).length > 0 && (
-                                      <div className="info-item">
+                                <div className="info-item">
                                         <label>{t('k8s.annotations')}</label>
                                         <div className="annotation-tags">
                                           {Object.entries(deploymentDetail.annotations).map(([key, value]) => (
                                             <span key={key} className="annotation-tag">{key}:{value}</span>
                                           ))}
-                                      </div>
-                                    </div>
+                                              </div>
+                                            </div>
                                     )}
                                       <div className="info-item">
                                       <label>{t('k8s.status')}</label>
                                       <div className="status-inline">
-                                        <span>
+                            <span>
                                           {t('k8s.ready')}:{deploymentDetail.readyReplicas || deploymentDetail.ready_replicas || 0}/{deploymentDetail.replicas || 0}个, {t('k8s.updated')}:{deploymentDetail.updatedReplicas || deploymentDetail.updated_replicas || 0}个, {t('k8s.available')}:{deploymentDetail.availableReplicas || deploymentDetail.available_replicas || 0}个
                                         </span>
                                         <button className="expand-details-btn-inline">
                                           展开现状详情 ▼
-                                        </button>
-                                      </div>
-                                      </div>
-                                      </div>
+                  </button>
+                </div>
+              </div>
+            </div>
 
                                   {/* 右列 */}
                                   <div className="info-column-right">
                                       <div className="info-item">
                                       <label>{t('k8s.createdAt')}</label>
                                       <span>{deploymentDetail.created_at ? new Date(deploymentDetail.created_at).toLocaleString('zh-CN') : '-'}</span>
-                                      </div>
-                                        <div className="info-item">
+                        </div>
+                                      <div className="info-item">
                                       <label>{t('k8s.strategy')}</label>
                                       <span>{deploymentDetail.strategy || 'RollingUpdate'}</span>
-                                        </div>
+                        </div>
                                     {(deploymentDetail.strategy === 'RollingUpdate' || !deploymentDetail.strategy) && (
-                                        <div className="info-item">
+                                      <div className="info-item">
                                         <label>{t('k8s.rollingUpdateStrategy')}</label>
                                         <div className="strategy-details">
                                           <div>超过期望的Pod数量: {deploymentDetail.maxSurge || deploymentDetail.max_surge || '25%'}</div>
                                           <div>不可用Pod最大数量: {deploymentDetail.maxUnavailable || deploymentDetail.max_unavailable || '25%'}</div>
-                                        </div>
-                                      </div>
+                    </div>
+                        </div>
                                     )}
                                     {deploymentDetail.labels && Object.keys(deploymentDetail.labels).length > 0 && (
                                       <div className="info-item">
@@ -3267,66 +3843,66 @@ const K8sClusterDetail = () => {
                                             <span key={key} className="label-tag">{key}:{value}</span>
                                           ))}
                                           <button className="show-all-btn">显示全部</button>
-                                  </div>
-                                  </div>
-                                )}
-                              </div>
-                              </div>
-                          </div>
+                      </div>
+                      </div>
+                      )}
+                    </div>
+                      </div>
+                    </div>
                             ) : selectedDeployment ? (
                               <div className="info-section">
                                 <h3>{t('k8s.basicInfo')}</h3>
                                 <div className="info-grid-two-columns">
                                   <div className="info-column-left">
-                                    <div className="info-item">
+                                      <div className="info-item">
                                       <label>{t('k8s.name')}</label>
                                       <span>{selectedDeployment.name || '-'}</span>
-                        </div>
-                                    <div className="info-item">
+                                      </div>
+                                        <div className="info-item">
                                       <label>{t('k8s.namespace')}</label>
                                       <span>{selectedDeployment.namespace || '-'}</span>
-                              </div>
-                              </div>
+                                        </div>
+                                        </div>
                                   <div className="info-column-right">
-                              </div>
-                            </div>
-                                          </div>
+                                        </div>
+                                      </div>
+                                  </div>
                             ) : null}
-                                          </div>
+                              </div>
                               
                           {/* 标签页 */}
                           <div className="deployment-detail-tabs">
-                                            <button 
+                  <button
                               className={`tab-button ${deploymentDetailTab === 'pods' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('pods')}
                                             >
                               {t('k8s.containerGroup')}
-                                            </button>
-                                            <button 
+                  </button>
+                  <button
                               className={`tab-button ${deploymentDetailTab === 'access' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('access')}
                             >
                               {t('k8s.accessMethod')}
-                                            </button>
-                                            <button 
+                        </button>
+                        <button
                               className={`tab-button ${deploymentDetailTab === 'events' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('events')}
                             >
                               {t('k8s.events')}
-                                            </button>
-                                              <button 
+                        </button>
+                        <button
                               className={`tab-button ${deploymentDetailTab === 'scaling' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('scaling')}
                             >
                               {t('k8s.containerScaling')}
-                                              </button>
-                                            <button 
+                        </button>
+                        <button
                               className={`tab-button ${deploymentDetailTab === 'history' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('history')}
                                             >
                               {t('k8s.historyVersions')}
-                                            </button>
-                                            <button 
+                        </button>
+                        <button
                               className={`tab-button ${deploymentDetailTab === 'logs' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('logs')}
                             >
@@ -3349,17 +3925,17 @@ const K8sClusterDetail = () => {
                               onClick={() => setDeploymentDetailTab('triggers')}
                             >
                               {t('k8s.triggers')}
-                                                </button>
-                                              </div>
+                        </button>
+                      </div>
 
                           {/* 标签页内容 */}
                           <div className="deployment-detail-tab-content">
                             {deploymentDetailTab === 'pods' && (
                               <div className="pods-tab-content">
-                          <div className="table-wrapper">
-                            <table className="data-table">
-                              <thead>
-                                <tr>
+                      <div className="table-wrapper">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
                                     <th>{t('k8s.name')}</th>
                                         <th>{t('k8s.image')}</th>
                                         <th>{t('k8s.status')} (全部) ▼</th>
@@ -3367,11 +3943,11 @@ const K8sClusterDetail = () => {
                                         <th>{t('k8s.restartCount')} ▲</th>
                                         <th>Pod IP</th>
                                   <th>{t('k8s.node')}</th>
-                                    <th>{t('k8s.createdAt')}</th>
+                              <th>{t('k8s.createdAt')}</th>
                                     <th>{t('common.actions')}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
+                            </tr>
+                          </thead>
+                          <tbody>
                                       {deploymentPods && deploymentPods.length > 0 ? (
                                         deploymentPods.map((pod) => (
                                           <tr key={pod.name}>
@@ -3381,8 +3957,8 @@ const K8sClusterDetail = () => {
                                               <span className={`status-badge status-${(pod.status || '').toLowerCase()}`}>
                                                 {pod.status === 'Running' && '● '}
                                                 {pod.status || 'Unknown'}
-                                              </span>
-                                          </td>
+                                    </span>
+                                  </td>
                                             <td>
                                               <button className="icon-btn" title={t('k8s.monitoring')}>
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -3406,7 +3982,7 @@ const K8sClusterDetail = () => {
                                           <td>
                                             <div className="action-buttons">
                                                 <button className="btn-text" onClick={() => handleViewPodDetails(pod)}>
-                                                  {t('k8s.details')}
+                                                  详情
                                                 </button>
                                                 <span className="action-separator">|</span>
                                                 <button className="btn-text" onClick={() => handleEditYaml(pod)}>
@@ -3432,13 +4008,13 @@ const K8sClusterDetail = () => {
               </div>
             </div>
                                 </td>
-                                  </tr>
-                                ))
+                                </tr>
+                              ))
                                       ) : (
                                         <tr>
                                           <td colSpan="9" className="empty-state">{t('k8s.noPods')}</td>
                               </tr>
-                              )}
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -3446,17 +4022,17 @@ const K8sClusterDetail = () => {
                                   <div className="pagination-info">
                                     共有{deploymentPods.length}条,每页显示:25条
                     </div>
-                  )}
-                    </div>
+              )}
+            </div>
                   )}
 
                             {deploymentDetailTab !== 'pods' && (
                               <div className="tab-placeholder">
                                 {t('k8s.comingSoon')}
-                          </div>
+                </div>
                         )}
-                          </div>
-                          </div>
+                </div>
+                </div>
                         )}
             </div>
           )}
