@@ -149,6 +149,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				k8s.GET("/clusters/:id/secrets", k8sHandler.GetSecrets)
 				k8s.GET("/clusters/:id/pvcs", k8sHandler.GetPVCs)
 				k8s.GET("/clusters/:id/deployments", k8sHandler.GetDeployments)
+				k8s.POST("/clusters/:id/deployments", k8sHandler.CreateDeployment)
 				// 将更具体的路由放在通用路由之前，确保正确匹配
 				k8s.GET("/clusters/:id/namespaces/:namespace/deployments/:deploymentName/cost", k8sHandler.GetDeploymentCost)
 				k8s.GET("/clusters/:id/namespaces/:namespace/deployments/:deploymentName/pods", k8sHandler.GetDeploymentPods)

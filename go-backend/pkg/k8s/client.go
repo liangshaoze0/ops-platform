@@ -665,6 +665,15 @@ func (c *Client) CreateResourceFromYAML(ctx context.Context, yamlContent string)
 	return nil
 }
 
+// CreateDeployment 创建Deployment
+func (c *Client) CreateDeployment(ctx context.Context, namespace string, deployment *appsv1.Deployment) (*appsv1.Deployment, error) {
+	created, err := c.clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("创建Deployment失败: %w", err)
+	}
+	return created, nil
+}
+
 // DeletePod 删除Pod
 func (c *Client) DeletePod(ctx context.Context, namespace, podName string) error {
 	deletePolicy := metav1.DeletePropagationForeground

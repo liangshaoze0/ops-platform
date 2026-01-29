@@ -155,6 +155,50 @@ const K8sClusterDetail = () => {
   const [editingNamespace, setEditingNamespace] = useState(null)
   const [selectedDeployments, setSelectedDeployments] = useState([])
   
+  // 创建 Deployment 状态
+  const [showCreateDeploymentModal, setShowCreateDeploymentModal] = useState(false)
+  const [createDeploymentStep, setCreateDeploymentStep] = useState(1)
+  const [createDeploymentData, setCreateDeploymentData] = useState({
+    // 基本信息
+    name: '',
+    namespace: 'default',
+    replicas: 2,
+    type: 'Deployment',
+    labels: {},
+    annotations: {},
+    timeZoneSync: false,
+    // 容器配置
+    containers: [{
+      name: 'container-1',
+      image: '',
+      imagePullPolicy: 'IfNotPresent',
+      imageSecret: '',
+      cpuLimit: '',
+      memoryLimit: '',
+      ephemeralStorageLimit: '',
+      gpuType: 'none',
+      cpuRequest: '0.25',
+      memoryRequest: '512Mi',
+      ephemeralStorageRequest: '',
+      stdin: false,
+      tty: false,
+      privileged: false,
+      initContainer: false,
+      ports: [],
+      envVars: [],
+    }],
+    // 高级配置
+    hpaEnabled: false,
+    cronHpaEnabled: false,
+    upgradeStrategy: false,
+    nodeAffinity: [],
+    podAffinity: [],
+    podAntiAffinity: [],
+    tolerations: [],
+    podLabels: {},
+    podAnnotations: {},
+  })
+  
   // 创建命名空间状态
   const [newNamespaceName, setNewNamespaceName] = useState('')
   const [newNamespaceDeletionProtection, setNewNamespaceDeletionProtection] = useState(false)
@@ -775,6 +819,48 @@ const K8sClusterDetail = () => {
     } catch (err) {
       console.error('切换删除保护失败:', err)
       setError(err.response?.data?.message || t('k8s.toggleDeletionProtectionFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 创建 Deployment
+  const handleCreateDeployment = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      const payload = {
+        name: createDeploymentData.name,
+        namespace: createDeploymentData.namespace,
+        replicas: createDeploymentData.replicas,
+        labels: createDeploymentData.labels,
+        annotations: createDeploymentData.annotations,
+        containers: createDeploymentData.containers,
+        podLabels: createDeploymentData.podLabels,
+        podAnnotations: createDeploymentData.podAnnotations,
+        timeZoneSync: createDeploymentData.timeZoneSync,
+        hpaEnabled: createDeploymentData.hpaEnabled,
+        cronHpaEnabled: createDeploymentData.cronHpaEnabled,
+        upgradeStrategy: createDeploymentData.upgradeStrategy,
+        nodeAffinity: createDeploymentData.nodeAffinity,
+        podAffinity: createDeploymentData.podAffinity,
+        podAntiAffinity: createDeploymentData.podAntiAffinity,
+        tolerations: createDeploymentData.tolerations,
+      }
+
+      await api.post(`/k8s/clusters/${id}/deployments`, payload)
+      
+      setSuccess(t('k8s.createDeploymentSuccess'))
+      // 刷新 Deployment 列表
+      fetchDeployments(createDeploymentData.namespace)
+      
+      // 注意：不重置数据，保持在步骤4显示成功信息
+    } catch (err) {
+      console.error('创建 Deployment 失败:', err)
+      setError(err.response?.data?.message || t('k8s.createDeploymentFailed'))
+      // 创建失败时，返回步骤3
+      setCreateDeploymentStep(3)
     } finally {
       setLoading(false)
     }
@@ -2685,7 +2771,10 @@ const K8sClusterDetail = () => {
 
                           <div className="deployment-toolbar">
                             <div className="deployment-toolbar-left">
-                              <button className="btn-primary" disabled>
+                                            <button 
+                                className="btn-primary" 
+                                onClick={() => setShowCreateDeploymentModal(true)}
+                                            >
                                 使用镜像创建
                                             </button>
                               <button className="btn-secondary" disabled>
@@ -3723,7 +3812,7 @@ const K8sClusterDetail = () => {
                         maxLength={63}
                       />
                       <span className="char-counter">{editNamespaceName.length}/63</span>
-                </div>
+                  </div>
                     <div className="form-hint">
                       {t('k8s.namespaceNameRule')}
                 </div>
@@ -3799,7 +3888,7 @@ const K8sClusterDetail = () => {
                         + {t('k8s.addNamespaceTag')}
                   </button>
                 </div>
-                  </div>
+                </div>
                 </div>
                 <div className="modal-actions">
                   <button
@@ -3824,6 +3913,817 @@ const K8sClusterDetail = () => {
                   >
                     {loading ? t('common.loading') : t('common.confirm')}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 创建 Deployment 模态框 */}
+          {showCreateDeploymentModal && (
+            <div className="modal-overlay" onClick={() => {
+              if (createDeploymentStep === 4) {
+                setShowCreateDeploymentModal(false)
+                setCreateDeploymentStep(1)
+              }
+            }}>
+              <div className="modal-content create-deployment-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <button
+                    className="btn-back-small"
+                    onClick={() => {
+                      if (createDeploymentStep > 1) {
+                        setCreateDeploymentStep(createDeploymentStep - 1)
+                      } else {
+                        setShowCreateDeploymentModal(false)
+                        setCreateDeploymentStep(1)
+                      }
+                    }}
+                  >
+                    ← {t('common.back')}
+                  </button>
+                  <h2>{t('k8s.create')}</h2>
+                  {createDeploymentStep < 4 && (
+                    <button
+                      className="modal-close"
+                      onClick={() => {
+                        setShowCreateDeploymentModal(false)
+                        setCreateDeploymentStep(1)
+                        setCreateDeploymentData({
+                          name: '',
+                          namespace: 'default',
+                          replicas: 2,
+                          type: 'Deployment',
+                          labels: {},
+                          annotations: {},
+                          timeZoneSync: false,
+                          containers: [{
+                            name: 'container-1',
+                            image: '',
+                            imagePullPolicy: 'IfNotPresent',
+                            imageSecret: '',
+                            cpuLimit: '',
+                            memoryLimit: '',
+                            ephemeralStorageLimit: '',
+                            gpuType: 'none',
+                            cpuRequest: '0.25',
+                            memoryRequest: '512Mi',
+                            ephemeralStorageRequest: '',
+                            stdin: false,
+                            tty: false,
+                            privileged: false,
+                            initContainer: false,
+                            ports: [],
+                            envVars: [],
+                          }],
+                          hpaEnabled: false,
+                          cronHpaEnabled: false,
+                          upgradeStrategy: false,
+                          nodeAffinity: [],
+                          podAffinity: [],
+                          podAntiAffinity: [],
+                          tolerations: [],
+                          podLabels: {},
+                          podAnnotations: {},
+                        })
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* 步骤指示器 */}
+                <div className="step-indicator">
+                  <div className={`step ${createDeploymentStep > 1 ? 'completed' : ''} ${createDeploymentStep === 1 ? 'active' : ''}`}>
+                    <div>{createDeploymentStep > 1 ? '✓' : '1'}</div>
+                    <span>应用基本信息</span>
+                </div>
+                  <div className={`step ${createDeploymentStep > 2 ? 'completed' : ''} ${createDeploymentStep === 2 ? 'active' : ''}`}>
+                    <div>{createDeploymentStep > 2 ? '✓' : '2'}</div>
+                    <span>容器配置</span>
+                  </div>
+                  <div className={`step ${createDeploymentStep > 3 ? 'completed' : ''} ${createDeploymentStep === 3 ? 'active' : ''}`}>
+                    <div>{createDeploymentStep > 3 ? '✓' : '3'}</div>
+                    <span>高级配置</span>
+                </div>
+                  <div className={`step ${createDeploymentStep === 4 ? 'active' : ''}`}>
+                    <div>4</div>
+                    <span>创建完成</span>
+              </div>
+            </div>
+
+                <div className="modal-body create-deployment-body">
+                  {/* 步骤1: 应用基本信息 */}
+                  {createDeploymentStep === 1 && (
+                    <div className="create-deployment-step">
+                      <div className="form-group">
+                        <label>{t('k8s.applicationName')}</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={createDeploymentData.name}
+                          onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, name: e.target.value })}
+                          placeholder={t('k8s.applicationNamePlaceholder')}
+                        />
+                        <div className="form-hint">
+                          {t('k8s.applicationNameRule')}
+                </div>
+                  </div>
+
+                      <div className="form-group">
+                        <label>{t('k8s.namespace')}</label>
+                        <select
+                          className="form-input"
+                          value={createDeploymentData.namespace}
+                          onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, namespace: e.target.value })}
+                        >
+                          <option value="">全部命名空间</option>
+                          {namespaces.map(ns => (
+                            <option key={ns.name} value={ns.name}>{ns.name}</option>
+                          ))}
+                        </select>
+                </div>
+
+                      <div className="form-group">
+                        <label>
+                          <span className="required">*</span> {t('k8s.replicas')}
+                        </label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={createDeploymentData.replicas}
+                          onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, replicas: parseInt(e.target.value) || 1 })}
+                          min="1"
+                        />
+                </div>
+
+                      <div className="form-group">
+                        <label>{t('k8s.type')}</label>
+                        <select
+                          className="form-input"
+                          value={createDeploymentData.type}
+                          onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, type: e.target.value })}
+                        >
+                          <option value="Deployment">无状态 (Deployment)</option>
+                        </select>
+                </div>
+
+                      <div className="form-group">
+                        <label>{t('k8s.labels')}</label>
+                  <button
+                          type="button"
+                          className="btn-text btn-add"
+                    onClick={() => {
+                            const newLabels = { ...createDeploymentData.labels, '': '' }
+                            setCreateDeploymentData({ ...createDeploymentData, labels: newLabels })
+                    }}
+                  >
+                          {t('common.add')}
+                  </button>
+                        {Object.entries(createDeploymentData.labels).map(([key, value]) => (
+                          <div key={key} className="label-item">
+                          <input
+                            type="text"
+                            value={key}
+                            onChange={(e) => {
+                                const newLabels = { ...createDeploymentData.labels }
+                              delete newLabels[key]
+                              newLabels[e.target.value] = value
+                                setCreateDeploymentData({ ...createDeploymentData, labels: newLabels })
+                            }}
+                              placeholder={t('k8s.variableName')}
+                              className="label-input"
+                          />
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => {
+                                setCreateDeploymentData({
+                                  ...createDeploymentData,
+                                  labels: { ...createDeploymentData.labels, [key]: e.target.value }
+                                })
+                              }}
+                              placeholder={t('k8s.variableValue')}
+                              className="label-input"
+                          />
+                          <button
+                              className="btn-text btn-delete"
+                            onClick={() => {
+                                const newLabels = { ...createDeploymentData.labels }
+                              delete newLabels[key]
+                                setCreateDeploymentData({ ...createDeploymentData, labels: newLabels })
+                            }}
+                          >
+                              {t('common.delete')}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                      <div className="form-group">
+                        <label>{t('k8s.annotations')}</label>
+                  <button
+                    type="button"
+                          className="btn-text btn-add"
+                    onClick={() => {
+                            const newAnnotations = { ...createDeploymentData.annotations, '': '' }
+                            setCreateDeploymentData({ ...createDeploymentData, annotations: newAnnotations })
+                    }}
+                  >
+                          {t('common.add')}
+                  </button>
+                        {Object.entries(createDeploymentData.annotations).map(([key, value]) => (
+                          <div key={key} className="label-item">
+                            <input
+                              type="text"
+                              value={key}
+                              onChange={(e) => {
+                                const newAnnotations = { ...createDeploymentData.annotations }
+                                delete newAnnotations[key]
+                                newAnnotations[e.target.value] = value
+                                setCreateDeploymentData({ ...createDeploymentData, annotations: newAnnotations })
+                              }}
+                              placeholder={t('k8s.variableName')}
+                              className="label-input"
+                            />
+                            <input
+                              type="text"
+                              value={value}
+                              onChange={(e) => {
+                                setCreateDeploymentData({
+                                  ...createDeploymentData,
+                                  annotations: { ...createDeploymentData.annotations, [key]: e.target.value }
+                                })
+                              }}
+                              placeholder={t('k8s.variableValue')}
+                              className="label-input"
+                            />
+                  <button
+                              className="btn-text btn-delete"
+                    onClick={() => {
+                                const newAnnotations = { ...createDeploymentData.annotations }
+                                delete newAnnotations[key]
+                                setCreateDeploymentData({ ...createDeploymentData, annotations: newAnnotations })
+                              }}
+                            >
+                              {t('common.delete')}
+                  </button>
+                </div>
+                        ))}
+                      </div>
+
+                  <div className="form-group">
+                        <label>
+                    <input
+                            type="checkbox"
+                            checked={createDeploymentData.timeZoneSync}
+                            onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, timeZoneSync: e.target.checked })}
+                          />
+                          {t('k8s.timeZoneSync')}
+                        </label>
+                  </div>
+                </div>
+                  )}
+
+                  {/* 步骤2: 容器配置 */}
+                  {createDeploymentStep === 2 && (
+                    <div className="create-deployment-step">
+                      <div className="container-tabs">
+                        {createDeploymentData.containers.map((container, index) => (
+                  <button
+                            key={index}
+                            className={`container-tab ${index === 0 ? 'active' : ''}`}
+                          >
+                            容器{index + 1}
+                  </button>
+                        ))}
+                  <button
+                          className="btn-text btn-add-container"
+                          onClick={() => {
+                            const newContainers = [...createDeploymentData.containers, {
+                              name: `container-${createDeploymentData.containers.length + 1}`,
+                              image: '',
+                              imagePullPolicy: 'IfNotPresent',
+                              imageSecret: '',
+                              cpuLimit: '',
+                              memoryLimit: '',
+                              ephemeralStorageLimit: '',
+                              gpuType: 'none',
+                              cpuRequest: '0.25',
+                              memoryRequest: '512Mi',
+                              ephemeralStorageRequest: '',
+                              stdin: false,
+                              tty: false,
+                              privileged: false,
+                              initContainer: false,
+                              ports: [],
+                              envVars: [],
+                            }]
+                            setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                          }}
+                        >
+                          + 添加容器
+                  </button>
+                </div>
+
+                      {createDeploymentData.containers.map((container, index) => (
+                        <div key={index} className="container-config">
+                          <div className="form-group">
+                            <label>{t('k8s.imageName')}</label>
+                            <div className="input-with-button">
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={container.image}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].image = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                                placeholder={t('k8s.imageNamePlaceholder')}
+                              />
+                              <button type="button" className="btn-secondary" disabled>
+                                {t('k8s.selectImage')}
+                              </button>
+              </div>
+            </div>
+
+                          <div className="form-group">
+                            <label>{t('k8s.imagePullPolicy')}</label>
+                            <select
+                              className="form-input"
+                              value={container.imagePullPolicy}
+                              onChange={(e) => {
+                                const newContainers = [...createDeploymentData.containers]
+                                newContainers[index].imagePullPolicy = e.target.value
+                                setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                              }}
+                            >
+                              <option value="IfNotPresent">IfNotPresent</option>
+                              <option value="Always">Always</option>
+                              <option value="Never">Never</option>
+                            </select>
+                            <button type="button" className="btn-text" disabled>
+                              {t('k8s.setImageSecret')}
+                  </button>
+                </div>
+
+                          <div className="form-group">
+                            <label>{t('k8s.resourceLimits')}</label>
+                            <div className="resource-inputs">
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder={t('k8s.cpuExample')}
+                                value={container.cpuLimit}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].cpuLimit = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder={t('k8s.memoryExample')}
+                                value={container.memoryLimit}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].memoryLimit = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder={t('k8s.ephemeralStorageExample')}
+                                value={container.ephemeralStorageLimit}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].ephemeralStorageLimit = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                </div>
+              </div>
+
+                          <div className="form-group">
+                            <label>{t('k8s.gpuResourceLimits')}</label>
+                            <div className="radio-group">
+                              <label>
+                                <input
+                                  type="radio"
+                                  value="none"
+                                  checked={container.gpuType === 'none'}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].gpuType = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                />
+                                {t('k8s.dontUseGpu')}
+                              </label>
+                              <label>
+                                <input
+                                  type="radio"
+                                  value="exclusive"
+                                  checked={container.gpuType === 'exclusive'}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].gpuType = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                />
+                                {t('k8s.exclusiveGpu')}
+                              </label>
+                              <label>
+                                <input
+                                  type="radio"
+                                  value="shared"
+                                  checked={container.gpuType === 'shared'}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].gpuType = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                />
+                                {t('k8s.sharedGpu')}
+                              </label>
+                </div>
+                          </div>
+
+                  <div className="form-group">
+                            <label>{t('k8s.resourceRequests')}</label>
+                            <div className="resource-inputs">
+                    <input
+                      type="text"
+                                className="form-input"
+                                value={container.cpuRequest}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].cpuRequest = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={container.memoryRequest}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].memoryRequest = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder={t('k8s.ephemeralStorageExample')}
+                                value={container.ephemeralStorageRequest}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].ephemeralStorageRequest = e.target.value
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                    />
+                  </div>
+                          </div>
+
+                  <div className="form-group">
+                            <label>{t('k8s.containerStartup')}</label>
+                            <div className="checkbox-group">
+                              <label>
+                    <input
+                                  type="checkbox"
+                                  checked={container.stdin}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].stdin = e.target.checked
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                />
+                                stdin
+                              </label>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={container.tty}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].tty = e.target.checked
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                />
+                                tty
+                              </label>
+                  </div>
+                          </div>
+
+                  <div className="form-group">
+                            <label>
+                    <input
+                                type="checkbox"
+                                checked={container.privileged}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].privileged = e.target.checked
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                              {t('k8s.privilegedContainer')}
+                            </label>
+                  </div>
+
+                  <div className="form-group">
+                            <label>
+                    <input
+                                type="checkbox"
+                                checked={container.initContainer}
+                                onChange={(e) => {
+                                  const newContainers = [...createDeploymentData.containers]
+                                  newContainers[index].initContainer = e.target.checked
+                                  setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                }}
+                              />
+                              {t('k8s.initContainer')}
+                            </label>
+                  </div>
+
+                          <div className="form-group">
+                            <label>{t('k8s.ports')}</label>
+                  <button
+                    type="button"
+                              className="btn-text btn-add"
+                    onClick={() => {
+                                const newContainers = [...createDeploymentData.containers]
+                                newContainers[index].ports.push({ name: '', containerPort: '', protocol: 'TCP' })
+                                setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                    }}
+                  >
+                              {t('common.add')}
+                  </button>
+                            {container.ports.map((port, portIndex) => (
+                              <div key={portIndex} className="port-item">
+                                <input
+                                  type="text"
+                                  placeholder={t('k8s.portName')}
+                                  value={port.name}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].ports[portIndex].name = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                  className="label-input"
+                                />
+                                <input
+                                  type="number"
+                                  placeholder={t('k8s.containerPort')}
+                                  value={port.containerPort}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].ports[portIndex].containerPort = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                  className="label-input"
+                                />
+                                <select
+                                  value={port.protocol}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].ports[portIndex].protocol = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                  className="label-input"
+                                >
+                                  <option value="TCP">TCP</option>
+                                  <option value="UDP">UDP</option>
+                                </select>
+                  <button
+                                  className="btn-text btn-delete"
+                                  onClick={() => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].ports.splice(portIndex, 1)
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                >
+                                  {t('common.delete')}
+                  </button>
+                </div>
+                            ))}
+              </div>
+
+                          <div className="form-group">
+                            <label>{t('k8s.envVars')}</label>
+                  <button
+                              type="button"
+                              className="btn-text btn-add"
+                    onClick={() => {
+                                const newContainers = [...createDeploymentData.containers]
+                                newContainers[index].envVars.push({ name: '', value: '' })
+                                setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                              }}
+                            >
+                              {t('common.add')}
+                            </button>
+                            {container.envVars.map((env, envIndex) => (
+                              <div key={envIndex} className="label-item">
+                                <input
+                                  type="text"
+                                  placeholder={t('k8s.variableName')}
+                                  value={env.name}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].envVars[envIndex].name = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                  className="label-input"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder={t('k8s.variableValue')}
+                                  value={env.value}
+                                  onChange={(e) => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].envVars[envIndex].value = e.target.value
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                  className="label-input"
+                                />
+                                <button
+                                  className="btn-text btn-delete"
+                                  onClick={() => {
+                                    const newContainers = [...createDeploymentData.containers]
+                                    newContainers[index].envVars.splice(envIndex, 1)
+                                    setCreateDeploymentData({ ...createDeploymentData, containers: newContainers })
+                                  }}
+                                >
+                                  {t('common.delete')}
+                  </button>
+                </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 步骤3: 高级配置 */}
+                  {createDeploymentStep === 3 && (
+                    <div className="create-deployment-step">
+                  <div className="form-group">
+                        <label>
+                    <input
+                            type="checkbox"
+                            checked={createDeploymentData.hpaEnabled}
+                            onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, hpaEnabled: e.target.checked })}
+                          />
+                          {t('k8s.hpaEnabled')}
+                        </label>
+                  </div>
+
+                  <div className="form-group">
+                        <label>
+                    <input
+                            type="checkbox"
+                            checked={createDeploymentData.cronHpaEnabled}
+                            onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, cronHpaEnabled: e.target.checked })}
+                          />
+                          {t('k8s.cronHpaEnabled')}
+                        </label>
+                  </div>
+
+                  <div className="form-group">
+                        <label>
+                    <input
+                            type="checkbox"
+                            checked={createDeploymentData.upgradeStrategy}
+                            onChange={(e) => setCreateDeploymentData({ ...createDeploymentData, upgradeStrategy: e.target.checked })}
+                          />
+                          {t('k8s.upgradeStrategy')}
+                        </label>
+                  </div>
+
+                  <div className="form-group">
+                        <label>{t('k8s.podLabels')}</label>
+                        <button
+                          type="button"
+                          className="btn-text btn-add"
+                          onClick={() => {
+                            const newPodLabels = { ...createDeploymentData.podLabels, '': '' }
+                            setCreateDeploymentData({ ...createDeploymentData, podLabels: newPodLabels })
+                          }}
+                        >
+                          {t('common.add')}
+                        </button>
+                        {Object.entries(createDeploymentData.podLabels).map(([key, value]) => (
+                          <div key={key} className="label-item">
+                    <input
+                              type="text"
+                              value={key}
+                              onChange={(e) => {
+                                const newPodLabels = { ...createDeploymentData.podLabels }
+                                delete newPodLabels[key]
+                                newPodLabels[e.target.value] = value
+                                setCreateDeploymentData({ ...createDeploymentData, podLabels: newPodLabels })
+                              }}
+                              placeholder={t('k8s.name')}
+                              className="label-input"
+                            />
+                            <input
+                              type="text"
+                              value={value}
+                              onChange={(e) => {
+                                setCreateDeploymentData({
+                                  ...createDeploymentData,
+                                  podLabels: { ...createDeploymentData.podLabels, [key]: e.target.value }
+                                })
+                              }}
+                              placeholder={t('k8s.value')}
+                              className="label-input"
+                            />
+                            <button
+                              className="btn-text btn-delete"
+                              onClick={() => {
+                                const newPodLabels = { ...createDeploymentData.podLabels }
+                                delete newPodLabels[key]
+                                setCreateDeploymentData({ ...createDeploymentData, podLabels: newPodLabels })
+                              }}
+                            >
+                              {t('common.delete')}
+                            </button>
+                  </div>
+                        ))}
+                </div>
+                    </div>
+                  )}
+
+                  {/* 步骤4: 创建完成 */}
+                  {createDeploymentStep === 4 && (
+                    <div className="create-deployment-step success-step">
+                      <div className="success-icon">✓</div>
+                      <h3>{t('k8s.createDeploymentSuccess')}</h3>
+                      <p>{t('k8s.deploymentCreatedMessage')}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="modal-actions">
+                  {createDeploymentStep < 4 && (
+                    <>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                          if (createDeploymentStep > 1) {
+                            setCreateDeploymentStep(createDeploymentStep - 1)
+                          } else {
+                            setShowCreateDeploymentModal(false)
+                            setCreateDeploymentStep(1)
+                          }
+                        }}
+                      >
+                        {createDeploymentStep > 1 ? t('common.previous') : t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                        onClick={() => {
+                          if (createDeploymentStep === 1) {
+                            if (!createDeploymentData.name || !createDeploymentData.namespace) {
+                              setError(t('k8s.nameAndNamespaceRequired'))
+                              return
+                            }
+                            setCreateDeploymentStep(2)
+                          } else if (createDeploymentStep === 2) {
+                            if (createDeploymentData.containers.some(c => !c.image)) {
+                              setError(t('k8s.imageRequired'))
+                              return
+                            }
+                            setCreateDeploymentStep(3)
+                          } else if (createDeploymentStep === 3) {
+                            // 先设置步骤4，然后调用创建函数
+                            setCreateDeploymentStep(4)
+                            handleCreateDeployment()
+                      }
+                    }}
+                    disabled={loading}
+                  >
+                        {createDeploymentStep === 3 ? t('k8s.create') : t('common.next')}
+                  </button>
+                    </>
+                  )}
+                  {createDeploymentStep === 4 && (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        setShowCreateDeploymentModal(false)
+                        setCreateDeploymentStep(1)
+                      }}
+                    >
+                      {t('common.close')}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

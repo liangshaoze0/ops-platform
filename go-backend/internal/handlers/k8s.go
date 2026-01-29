@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
@@ -896,6 +897,221 @@ func (h *K8sHandler) UpdateNamespaceYAML(c *gin.Context) {
 	}
 
 	utils.Success(c, namespace)
+}
+
+// CreateDeployment 创建Deployment
+func (h *K8sHandler) CreateDeployment(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	type PortConfig struct {
+		Name          string `json:"name"`
+		ContainerPort int32  `json:"containerPort"`
+		Protocol      string `json:"protocol"`
+	}
+
+	type EnvVarConfig struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+
+	type ContainerConfig struct {
+		Name                    string        `json:"name"`
+		Image                   string        `json:"image" binding:"required"`
+		ImagePullPolicy         string        `json:"imagePullPolicy"`
+		ImageSecret             string        `json:"imageSecret"`
+		CpuLimit                string        `json:"cpuLimit"`
+		MemoryLimit             string        `json:"memoryLimit"`
+		EphemeralStorageLimit   string        `json:"ephemeralStorageLimit"`
+		GpuType                 string        `json:"gpuType"`
+		CpuRequest              string        `json:"cpuRequest"`
+		MemoryRequest           string        `json:"memoryRequest"`
+		EphemeralStorageRequest string        `json:"ephemeralStorageRequest"`
+		Stdin                   bool          `json:"stdin"`
+		Tty                     bool          `json:"tty"`
+		Privileged              bool          `json:"privileged"`
+		InitContainer           bool          `json:"initContainer"`
+		Ports                   []PortConfig  `json:"ports"`
+		EnvVars                 []EnvVarConfig `json:"envVars"`
+	}
+
+	var req struct {
+		Name            string            `json:"name" binding:"required"`
+		Namespace       string            `json:"namespace" binding:"required"`
+		Replicas        int32             `json:"replicas" binding:"required,min=1"`
+		Labels          map[string]string `json:"labels"`
+		Annotations     map[string]string `json:"annotations"`
+		Containers      []ContainerConfig `json:"containers" binding:"required,min=1"`
+		PodLabels       map[string]string `json:"podLabels"`
+		PodAnnotations  map[string]string `json:"podAnnotations"`
+		TimeZoneSync    bool              `json:"timeZoneSync"`
+		HpaEnabled      bool              `json:"hpaEnabled"`
+		CronHpaEnabled  bool              `json:"cronHpaEnabled"`
+		UpgradeStrategy bool              `json:"upgradeStrategy"`
+		NodeAffinity    []interface{}     `json:"nodeAffinity"`
+		PodAffinity     []interface{}     `json:"podAffinity"`
+		PodAntiAffinity []interface{}     `json:"podAntiAffinity"`
+		Tolerations     []interface{}     `json:"tolerations"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+
+	// 创建K8s客户端
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx := context.Background()
+
+	// 构建Deployment对象
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        req.Name,
+			Namespace:   req.Namespace,
+			Labels:      req.Labels,
+			Annotations: req.Annotations,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &req.Replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": req.Name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      req.PodLabels,
+					Annotations: req.PodAnnotations,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{},
+				},
+			},
+		},
+	}
+
+	// 如果Pod标签为空，使用默认标签
+	if len(deployment.Spec.Template.Labels) == 0 {
+		deployment.Spec.Template.Labels = map[string]string{
+			"app": req.Name,
+		}
+	}
+
+	// 添加容器
+	for _, containerConfig := range req.Containers {
+		container := corev1.Container{
+			Name:            containerConfig.Name,
+			Image:           containerConfig.Image,
+			ImagePullPolicy: corev1.PullPolicy(containerConfig.ImagePullPolicy),
+			Stdin:           containerConfig.Stdin,
+			TTY:             containerConfig.Tty,
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: &containerConfig.Privileged,
+			},
+		}
+
+		// 设置资源限制和请求
+		container.Resources = corev1.ResourceRequirements{
+			Limits:   make(corev1.ResourceList),
+			Requests: make(corev1.ResourceList),
+		}
+
+		if containerConfig.CpuLimit != "" {
+			container.Resources.Limits[corev1.ResourceCPU] = resource.MustParse(containerConfig.CpuLimit)
+		}
+		if containerConfig.MemoryLimit != "" {
+			container.Resources.Limits[corev1.ResourceMemory] = resource.MustParse(containerConfig.MemoryLimit)
+		}
+		if containerConfig.EphemeralStorageLimit != "" {
+			container.Resources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse(containerConfig.EphemeralStorageLimit)
+		}
+
+		if containerConfig.CpuRequest != "" {
+			container.Resources.Requests[corev1.ResourceCPU] = resource.MustParse(containerConfig.CpuRequest)
+		}
+		if containerConfig.MemoryRequest != "" {
+			container.Resources.Requests[corev1.ResourceMemory] = resource.MustParse(containerConfig.MemoryRequest)
+		}
+		if containerConfig.EphemeralStorageRequest != "" {
+			container.Resources.Requests[corev1.ResourceEphemeralStorage] = resource.MustParse(containerConfig.EphemeralStorageRequest)
+		}
+
+		// GPU资源
+		if containerConfig.GpuType == "exclusive" {
+			container.Resources.Requests["nvidia.com/gpu"] = resource.MustParse("1")
+		} else if containerConfig.GpuType == "shared" {
+			// 共享GPU需要根据实际情况设置
+		}
+
+		// 设置端口
+		for _, portConfig := range containerConfig.Ports {
+			port := corev1.ContainerPort{
+				Name:          portConfig.Name,
+				ContainerPort: portConfig.ContainerPort,
+				Protocol:      corev1.Protocol(portConfig.Protocol),
+			}
+			container.Ports = append(container.Ports, port)
+		}
+
+		// 设置环境变量
+		for _, envConfig := range containerConfig.EnvVars {
+			if envConfig.Name != "" {
+				env := corev1.EnvVar{
+					Name:  envConfig.Name,
+					Value: envConfig.Value,
+				}
+				container.Env = append(container.Env, env)
+			}
+		}
+
+		// 设置镜像拉取密钥
+		if containerConfig.ImageSecret != "" {
+			deployment.Spec.Template.Spec.ImagePullSecrets = []corev1.LocalObjectReference{
+				{Name: containerConfig.ImageSecret},
+			}
+		}
+
+		if containerConfig.InitContainer {
+			deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers, container)
+		} else {
+			deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, container)
+		}
+	}
+
+	// 时区同步
+	if req.TimeZoneSync {
+		deployment.Spec.Template.Spec.HostNetwork = false
+		deployment.Spec.Template.Spec.HostPID = false
+	}
+
+	// 创建Deployment
+	created, err := client.CreateDeployment(ctx, req.Namespace, deployment)
+	if err != nil {
+		utils.InternalServerError(c, "创建Deployment失败: "+err.Error())
+		return
+	}
+
+	utils.Success(c, created)
 }
 
 // 辅助函数：获取节点状态
