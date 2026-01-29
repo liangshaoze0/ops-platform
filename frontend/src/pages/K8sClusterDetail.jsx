@@ -153,6 +153,37 @@ const K8sClusterDetail = () => {
   const [showEditNamespaceModal, setShowEditNamespaceModal] = useState(false)
   const [showQuotaModal, setShowQuotaModal] = useState(false)
   const [editingNamespace, setEditingNamespace] = useState(null)
+  
+  // 资源配额状态
+  const [resourceQuotaExpanded, setResourceQuotaExpanded] = useState(true)
+  const [limitRangeExpanded, setLimitRangeExpanded] = useState(true)
+  const [quotaData, setQuotaData] = useState({
+    // Resource Quota
+    cpuLimit: '',
+    memoryLimit: '',
+    memoryLimitUnit: 'Gi',
+    cpuRequest: '',
+    memoryRequest: '',
+    memoryRequestUnit: 'Gi',
+    exclusiveGpu: '',
+    sharedGpuMemory: '',
+    sharedGpuMemoryUnit: 'Gi',
+    storageClaim: '',
+    storageSpace: '',
+    storageSpaceUnit: 'Gi',
+    configFile: '',
+    containerGroup: '',
+    service: '',
+    loadBalancerService: '',
+    secret: '',
+    // Limit Range
+    limitCpuLimit: '',
+    limitMemoryLimit: '',
+    limitMemoryLimitUnit: 'Gi',
+    requestCpuLimit: '',
+    requestMemoryLimit: '',
+    requestMemoryLimitUnit: 'Gi',
+  })
 
   // 从URL参数同步tab和type（初始化时从URL恢复状态）
   useEffect(() => {
@@ -600,6 +631,108 @@ const K8sClusterDetail = () => {
     } catch (err) {
       console.error('获取命名空间列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchNamespacesFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 保存资源配额与限制
+  const handleSaveQuota = async () => {
+    if (!editingNamespace) return
+
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 构建Resource Quota数据
+      const resourceQuota = {}
+      
+      // 计算资源限制
+      if (quotaData.cpuLimit) {
+        resourceQuota['limits.cpu'] = quotaData.cpuLimit
+      }
+      if (quotaData.memoryLimit) {
+        resourceQuota['limits.memory'] = `${quotaData.memoryLimit}${quotaData.memoryLimitUnit}`
+      }
+      if (quotaData.cpuRequest) {
+        resourceQuota['requests.cpu'] = quotaData.cpuRequest
+      }
+      if (quotaData.memoryRequest) {
+        resourceQuota['requests.memory'] = `${quotaData.memoryRequest}${quotaData.memoryRequestUnit}`
+      }
+      if (quotaData.exclusiveGpu) {
+        resourceQuota['requests.nvidia.com/gpu'] = quotaData.exclusiveGpu
+      }
+      if (quotaData.sharedGpuMemory) {
+        resourceQuota['requests.nvidia.com/gpu-memory'] = `${quotaData.sharedGpuMemory}${quotaData.sharedGpuMemoryUnit}`
+      }
+      
+      // 存储资源限制
+      if (quotaData.storageClaim) {
+        resourceQuota['persistentvolumeclaims'] = quotaData.storageClaim
+      }
+      if (quotaData.storageSpace) {
+        resourceQuota['requests.storage'] = `${quotaData.storageSpace}${quotaData.storageSpaceUnit}`
+      }
+      
+      // 其他资源限制
+      if (quotaData.configFile) {
+        resourceQuota['configmaps'] = quotaData.configFile
+      }
+      if (quotaData.containerGroup) {
+        resourceQuota['pods'] = quotaData.containerGroup
+      }
+      if (quotaData.service) {
+        resourceQuota['services'] = quotaData.service
+      }
+      if (quotaData.loadBalancerService) {
+        resourceQuota['services.loadbalancers'] = quotaData.loadBalancerService
+      }
+      if (quotaData.secret) {
+        resourceQuota['secrets'] = quotaData.secret
+      }
+
+      // 构建Limit Range数据
+      const limitRange = {}
+      
+      if (quotaData.limitCpuLimit || quotaData.limitMemoryLimit) {
+        limitRange.limits = {}
+        if (quotaData.limitCpuLimit) {
+          limitRange.limits.cpu = quotaData.limitCpuLimit
+        }
+        if (quotaData.limitMemoryLimit) {
+          limitRange.limits.memory = `${quotaData.limitMemoryLimit}${quotaData.limitMemoryLimitUnit}`
+        }
+      }
+      
+      if (quotaData.requestCpuLimit || quotaData.requestMemoryLimit) {
+        limitRange.requests = {}
+        if (quotaData.requestCpuLimit) {
+          limitRange.requests.cpu = quotaData.requestCpuLimit
+        }
+        if (quotaData.requestMemoryLimit) {
+          limitRange.requests.memory = `${quotaData.requestMemoryLimit}${quotaData.requestMemoryLimitUnit}`
+        }
+      }
+
+      // 发送API请求
+      const payload = {
+        namespace: editingNamespace.name,
+        resourceQuota: Object.keys(resourceQuota).length > 0 ? resourceQuota : null,
+        limitRange: Object.keys(limitRange).length > 0 ? limitRange : null,
+      }
+
+      await api.post(`/k8s/clusters/${id}/namespaces/${editingNamespace.name}/quota`, payload)
+      
+      setSuccess(t('k8s.updateQuotaSuccess'))
+      setShowQuotaModal(false)
+      setEditingNamespace(null)
+      
+      // 刷新命名空间列表
+      fetchNamespaces()
+    } catch (err) {
+      console.error('保存资源配额失败:', err)
+      setError(err.response?.data?.message || t('k8s.updateQuotaFailed'))
     } finally {
       setLoading(false)
     }
@@ -2051,46 +2184,42 @@ const K8sClusterDetail = () => {
                             <div>
                           <div className="section-header">
                             <h2>{t('k8s.namespacesAndQuota')}</h2>
-                          </div>
+                            </div>
                           <div className="section-actions-left">
-                            <button
-                              className="btn-primary"
+                          <button
+                            className="btn-primary"
                               onClick={() => setShowCreateNamespaceModal(true)}
                             >
                               {t('common.create')}
+                          </button>
+                            <select
+                              className="search-type-select"
+                              value={namespaceSearchType}
+                              onChange={(e) => setNamespaceSearchType(e.target.value)}
+                            >
+                              <option value="name">{t('k8s.name')}</option>
+                            </select>
+                            <input
+                              type="text"
+                              className="search-input-inline"
+                              placeholder={t('k8s.searchPlaceholder')}
+                              value={namespaceSearchTerm}
+                              onChange={(e) => setNamespaceSearchTerm(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  fetchNamespaces()
+                                }
+                              }}
+                            />
+                            <button
+                              className="btn-search"
+                              onClick={() => fetchNamespaces()}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
                             </button>
-                          </div>
-                          <div className="search-bar">
-                            <div className="search-controls-vertical">
-                              <select
-                                className="search-type-select"
-                                value={namespaceSearchType}
-                                onChange={(e) => setNamespaceSearchType(e.target.value)}
-                              >
-                                <option value="name">{t('k8s.name')}</option>
-                              </select>
-                              <input
-                                type="text"
-                                className="search-input-small"
-                                placeholder={t('k8s.searchPlaceholder')}
-                                value={namespaceSearchTerm}
-                                onChange={(e) => setNamespaceSearchTerm(e.target.value)}
-                                onKeyPress={(e) => {
-                                  if (e.key === 'Enter') {
-                                    fetchNamespaces()
-                                  }
-                                }}
-                              />
-                              <button
-                                className="btn-search"
-                                onClick={() => fetchNamespaces()}
-                              >
-                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                  <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              </button>
-                            </div>
                           </div>
                               <div className="table-wrapper">
                                 <table className="data-table">
@@ -2496,6 +2625,455 @@ const K8sClusterDetail = () => {
                     disabled={loading}
                   >
                     {loading ? t('common.loading') : t('common.save')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 资源配额与限制模态框 */}
+          {showQuotaModal && editingNamespace && (
+            <div className="modal-overlay" onClick={() => setShowQuotaModal(false)}>
+              <div className="modal-content quota-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>{t('k8s.resourceQuotaAndLimits')}</h2>
+                  <button
+                    className="modal-close"
+                    onClick={() => {
+                      setShowQuotaModal(false)
+                      setEditingNamespace(null)
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="modal-body">
+                  {/* 信息提示横幅 */}
+                  <div className="info-banner">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C12.42 16 16 12.42 16 8C16 3.58 12.42 0 8 0ZM8 12C7.45 12 7 11.55 7 11C7 10.45 7.45 10 8 10C8.55 10 9 10.45 9 11C9 11.55 8.55 12 8 12ZM9 9H7V5H9V9Z" fill="#F59E0B"/>
+                    </svg>
+                    <span>{t('k8s.quotaInfoBanner')}</span>
+                </div>
+
+                  {/* 两列布局容器 */}
+                  <div className="quota-sections-container">
+                    {/* Resource Quota 部分 */}
+                    <div className="quota-section">
+                    <div 
+                      className="quota-section-header"
+                      onClick={() => setResourceQuotaExpanded(!resourceQuotaExpanded)}
+                    >
+                      <span className="quota-section-title">{t('k8s.resourceQuota')}</span>
+                      <svg 
+                        className={`quota-arrow ${resourceQuotaExpanded ? 'expanded' : ''}`}
+                        width="16" 
+                        height="16" 
+                        viewBox="0 0 16 16" 
+                        fill="none"
+                      >
+                        <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                </div>
+                    {resourceQuotaExpanded && (
+                      <div className="quota-section-content">
+                        {/* 计算资源限制 */}
+                        <div className="quota-subsection">
+                          <h4>{t('k8s.computeResourceLimits')}</h4>
+                          
+                          {/* CPU Limit */}
+                          <div className="quota-field">
+                            <label>{t('k8s.cpuLimit')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                    <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.cpuLimit}
+                                onChange={(e) => setQuotaData({...quotaData, cpuLimit: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">核</span>
+                  </div>
+            </div>
+
+                          {/* Memory Limit */}
+                          <div className="quota-field">
+                            <label>{t('k8s.memoryLimit')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                    <input
+                      type="text"
+                                className="quota-input"
+                                value={quotaData.memoryLimit}
+                                onChange={(e) => setQuotaData({...quotaData, memoryLimit: e.target.value})}
+                                placeholder="0"
+                              />
+                              <select
+                                className="quota-unit-select"
+                                value={quotaData.memoryLimitUnit}
+                                onChange={(e) => setQuotaData({...quotaData, memoryLimitUnit: e.target.value})}
+                              >
+                                <option value="Gi">Gi</option>
+                                <option value="Mi">Mi</option>
+                              </select>
+                  </div>
+                          </div>
+
+                          {/* CPU Request */}
+                          <div className="quota-field">
+                            <label>{t('k8s.cpuRequest')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                          <input
+                            type="text"
+                                className="quota-input"
+                                value={quotaData.cpuRequest}
+                                onChange={(e) => setQuotaData({...quotaData, cpuRequest: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">核</span>
+                  </div>
+                          </div>
+
+                          {/* Memory Request */}
+                          <div className="quota-field">
+                            <label>{t('k8s.memoryRequest')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                          <input
+                            type="text"
+                                className="quota-input"
+                                value={quotaData.memoryRequest}
+                                onChange={(e) => setQuotaData({...quotaData, memoryRequest: e.target.value})}
+                                placeholder="0"
+                              />
+                              <select
+                                className="quota-unit-select"
+                                value={quotaData.memoryRequestUnit}
+                                onChange={(e) => setQuotaData({...quotaData, memoryRequestUnit: e.target.value})}
+                              >
+                                <option value="Gi">Gi</option>
+                                <option value="Mi">Mi</option>
+                              </select>
+                        </div>
+                    </div>
+
+                          {/* Exclusive GPU Limit */}
+                          <div className="quota-field">
+                            <label>
+                              {t('k8s.exclusiveGpuLimit')}
+                              <svg className="help-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5"/>
+                                <path d="M7 10V7M7 4H7.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                              </svg>
+                            </label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                    <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.exclusiveGpu}
+                                onChange={(e) => setQuotaData({...quotaData, exclusiveGpu: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                  </div>
+                </div>
+
+                          {/* Shared GPU Memory Limit */}
+                          <div className="quota-field">
+                            <label>
+                              {t('k8s.sharedGpuMemoryLimit')}
+                              <svg className="help-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5"/>
+                                <path d="M7 10V7M7 4H7.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                              </svg>
+                            </label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.sharedGpuMemory}
+                                onChange={(e) => setQuotaData({...quotaData, sharedGpuMemory: e.target.value})}
+                                placeholder="0"
+                              />
+                              <select
+                                className="quota-unit-select"
+                                value={quotaData.sharedGpuMemoryUnit}
+                                onChange={(e) => setQuotaData({...quotaData, sharedGpuMemoryUnit: e.target.value})}
+                              >
+                                <option value="Gi">Gi</option>
+                                <option value="Mi">Mi</option>
+                              </select>
+                </div>
+              </div>
+            </div>
+
+                        {/* 存储资源限制 */}
+                        <div className="quota-subsection">
+                          <h4>{t('k8s.storageResourceLimits')}</h4>
+                          
+                          {/* Storage Claim Quantity */}
+                          <div className="quota-field">
+                            <label>{t('k8s.storageClaimQuantity')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.storageClaim}
+                                onChange={(e) => setQuotaData({...quotaData, storageClaim: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                </div>
+                  </div>
+
+                          {/* Storage Space */}
+                          <div className="quota-field">
+                            <label>{t('k8s.storageSpace')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.storageSpace}
+                                onChange={(e) => setQuotaData({...quotaData, storageSpace: e.target.value})}
+                                placeholder="0"
+                              />
+                              <select
+                                className="quota-unit-select"
+                                value={quotaData.storageSpaceUnit}
+                                onChange={(e) => setQuotaData({...quotaData, storageSpaceUnit: e.target.value})}
+                              >
+                                <option value="Gi">Gi</option>
+                                <option value="Mi">Mi</option>
+                              </select>
+                </div>
+                  </div>
+                </div>
+
+                        {/* 其他资源限制 */}
+                        <div className="quota-subsection">
+                          <h4>{t('k8s.otherResourceLimits')}</h4>
+                          
+                          {/* Config File Quantity */}
+                          <div className="quota-field">
+                            <label>{t('k8s.configFileQuantity')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.configFile}
+                                onChange={(e) => setQuotaData({...quotaData, configFile: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                            </div>
+                          </div>
+
+                          {/* Container Group Quantity */}
+                          <div className="quota-field">
+                            <label>{t('k8s.containerGroupQuantity')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.containerGroup}
+                                onChange={(e) => setQuotaData({...quotaData, containerGroup: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                            </div>
+                          </div>
+
+                          {/* Service Quantity */}
+                          <div className="quota-field">
+                            <label>{t('k8s.serviceQuantity')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                    <input
+                      type="text"
+                                className="quota-input"
+                                value={quotaData.service}
+                                onChange={(e) => setQuotaData({...quotaData, service: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                  </div>
+                  </div>
+
+                          {/* Load Balancer Service Quantity */}
+                          <div className="quota-field">
+                            <label>{t('k8s.loadBalancerServiceQuantity')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                          <input
+                            type="text"
+                                className="quota-input"
+                                value={quotaData.loadBalancerService}
+                                onChange={(e) => setQuotaData({...quotaData, loadBalancerService: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                        </div>
+                    </div>
+
+                          {/* Secret Quantity */}
+                          <div className="quota-field">
+                            <label>{t('k8s.secretQuantity')}</label>
+                            <div className="quota-input-group">
+                              <span className="quota-label">{t('k8s.maxUsage')}</span>
+                    <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.secret}
+                                onChange={(e) => setQuotaData({...quotaData, secret: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">个</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                    {/* Limit Range 部分 */}
+                    <div className="quota-section">
+                    <div 
+                      className="quota-section-header"
+                      onClick={() => setLimitRangeExpanded(!limitRangeExpanded)}
+                    >
+                      <span className="quota-section-title">
+                        {t('k8s.defaultResourceLimits')}
+                        <svg className="help-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M7 10V7M7 4H7.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </span>
+                      <svg 
+                        className={`quota-arrow ${limitRangeExpanded ? 'expanded' : ''}`}
+                        width="16" 
+                        height="16" 
+                        viewBox="0 0 16 16" 
+                        fill="none"
+                      >
+                        <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                </div>
+                    {limitRangeExpanded && (
+                      <div className="quota-section-content">
+                        {/* 资源限制 */}
+                        <div className="quota-subsection">
+                          <h4>{t('k8s.resourceLimit')}</h4>
+                          
+                          {/* CPU Limit */}
+                          <div className="quota-field">
+                            <label>{t('k8s.cpuLimit')}</label>
+                            <div className="quota-input-group">
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.limitCpuLimit}
+                                onChange={(e) => setQuotaData({...quotaData, limitCpuLimit: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">核</span>
+                            </div>
+                          </div>
+
+                          {/* Memory Limit */}
+                          <div className="quota-field">
+                            <label>{t('k8s.memoryLimit')}</label>
+                            <div className="quota-input-group">
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.limitMemoryLimit}
+                                onChange={(e) => setQuotaData({...quotaData, limitMemoryLimit: e.target.value})}
+                                placeholder="0"
+                              />
+                              <select
+                                className="quota-unit-select"
+                                value={quotaData.limitMemoryLimitUnit}
+                                onChange={(e) => setQuotaData({...quotaData, limitMemoryLimitUnit: e.target.value})}
+                              >
+                                <option value="Gi">Gi</option>
+                                <option value="Mi">Mi</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 资源申请 */}
+                        <div className="quota-subsection">
+                          <h4>{t('k8s.resourceRequest')}</h4>
+                          
+                          {/* CPU Limit */}
+                          <div className="quota-field">
+                            <label>{t('k8s.cpuLimit')}</label>
+                            <div className="quota-input-group">
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.requestCpuLimit}
+                                onChange={(e) => setQuotaData({...quotaData, requestCpuLimit: e.target.value})}
+                                placeholder="0"
+                              />
+                              <span className="quota-unit">核</span>
+                            </div>
+                          </div>
+
+                          {/* Memory Limit */}
+                          <div className="quota-field">
+                            <label>{t('k8s.memoryLimit')}</label>
+                            <div className="quota-input-group">
+                              <input
+                                type="text"
+                                className="quota-input"
+                                value={quotaData.requestMemoryLimit}
+                                onChange={(e) => setQuotaData({...quotaData, requestMemoryLimit: e.target.value})}
+                                placeholder="0"
+                              />
+                              <select
+                                className="quota-unit-select"
+                                value={quotaData.requestMemoryLimitUnit}
+                                onChange={(e) => setQuotaData({...quotaData, requestMemoryLimitUnit: e.target.value})}
+                              >
+                                <option value="Gi">Gi</option>
+                                <option value="Mi">Mi</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowQuotaModal(false)
+                      setEditingNamespace(null)
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveQuota}
+                    disabled={loading}
+                  >
+                    {t('common.confirm')}
                   </button>
                 </div>
               </div>
