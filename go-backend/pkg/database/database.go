@@ -80,12 +80,29 @@ func autoMigrate(db *gorm.DB) error {
 	)
 }
 
+// isValidTableName 验证表名是否在白名单中，防止SQL注入
+func isValidTableName(tableName string, allowedTables []string) bool {
+	for _, allowed := range allowedTables {
+		if tableName == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 // fixCodeFieldIssue 修复code字段问题
 // 如果数据库中存在code字段但模型中没有，尝试删除该字段或设置默认值
 func fixCodeFieldIssue(db *gorm.DB) {
-	tables := []string{"users", "sessions", "ai_images", "roles", "user_roles", "audit_logs"}
+	// 定义允许的表名白名单
+	allowedTables := []string{"users", "sessions", "ai_images", "roles", "user_roles", "audit_logs"}
 	
-	for _, tableName := range tables {
+	for _, tableName := range allowedTables {
+		// 双重验证：确保表名在白名单中
+		if !isValidTableName(tableName, allowedTables) {
+			log.Printf("警告: 表名 %s 不在白名单中，跳过处理", tableName)
+			continue
+		}
+
 		// 检查表是否存在code字段
 		var hasCode int64
 		if err := db.Raw(`
@@ -100,11 +117,12 @@ func fixCodeFieldIssue(db *gorm.DB) {
 
 		if hasCode > 0 {
 			log.Printf("检测到表 %s 存在code字段，但模型中没有定义，尝试删除...", tableName)
-			// 尝试删除code字段
-			if err := db.Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN code", tableName)).Error; err != nil {
+			// 使用参数化查询验证表名后，再执行ALTER TABLE
+			// 注意：ALTER TABLE 不支持参数化表名，但我们已经通过白名单验证确保安全
+			if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN code", tableName)).Error; err != nil {
 				log.Printf("删除表 %s 的code字段失败: %v", tableName, err)
 				// 如果删除失败，尝试设置默认值
-				if err := db.Exec(fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN code VARCHAR(255) DEFAULT ''", tableName)).Error; err != nil {
+				if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN code VARCHAR(255) DEFAULT ''", tableName)).Error; err != nil {
 					log.Printf("设置表 %s 的code字段默认值失败: %v", tableName, err)
 				}
 			} else {

@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"log"
+	"strings"
 	"time"
 
 	"develops-ai/internal/config"
@@ -111,7 +113,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			UserID: user.ID,
 			RoleID: userRole.ID,
 		}
-		h.db.Create(&userRoleRelation)
+		if err := h.db.Create(&userRoleRelation).Error; err != nil {
+			// 记录错误但不中断注册流程，因为用户已经创建成功
+			log.Printf("为用户 %s 分配默认角色失败: %v", user.Username, err)
+		}
 	}
 
 	// 记录审计日志
@@ -214,9 +219,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	
 	authHeader := c.GetHeader("Authorization")
 	if authHeader != "" {
-		parts := authHeader[len("Bearer "):]
-		// 删除会话
-		h.db.Where("token = ?", parts).Delete(&models.Session{})
+		// 安全地提取token，检查Bearer前缀
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && parts[0] == "Bearer" {
+			// 删除会话
+			h.db.Where("token = ?", parts[1]).Delete(&models.Session{})
+		}
 	}
 
 	// 记录审计日志
