@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import api from '../services/api'
 
 const LanguageContext = createContext()
@@ -56,6 +56,7 @@ const translations = {
     'nav.configInspection': '配置巡检',
     'nav.securityMonitoring': '安全监控',
     'nav.logout': '登出',
+    'nav.searchPlaceholder': '请输入搜索内容',
     
     // 偏好设置
     'preferences.title': '偏好设置',
@@ -172,6 +173,13 @@ const translations = {
     'k8s.labels': '标签',
     'k8s.noNodes': '暂无节点',
     'k8s.noNamespaces': '暂无命名空间',
+    'k8s.nodePool': '节点池',
+    'k8s.node': '节点',
+    'k8s.componentManagement': '组件管理',
+    'k8s.application': '应用',
+    'k8s.inspectionAndDiagnosis': '巡检和诊断',
+    'k8s.operationsManagement': '运维管理',
+    'k8s.costSuite': '成本套件',
     'k8s.fetchInfoFailed': '获取集群信息失败',
     'k8s.fetchNodesFailed': '获取节点列表失败',
     'k8s.fetchNamespacesFailed': '获取命名空间列表失败',
@@ -254,11 +262,20 @@ const translations = {
     'k8s.fetchSecretsFailed': '获取Secret列表失败',
     'k8s.fetchPVCsFailed': '获取PVC列表失败',
     'k8s.deployments': '无状态',
+    'k8s.stateless': '无状态',
     'k8s.statefulsets': '有状态',
+    'k8s.stateful': '有状态',
     'k8s.daemonsets': '守护进程集',
     'k8s.jobs': '任务',
     'k8s.cronjobs': '定时任务',
     'k8s.customResources': '自定义资源',
+    'k8s.nodePool': '节点池',
+    'k8s.node': '节点',
+    'k8s.componentManagement': '组件管理',
+    'k8s.application': '应用',
+    'k8s.inspectionAndDiagnosis': '巡检和诊断',
+    'k8s.operationsManagement': '运维管理',
+    'k8s.costSuite': '成本套件',
     'k8s.deploymentName': 'Deployment名称',
     'k8s.statefulSetName': 'StatefulSet名称',
     'k8s.daemonSetName': 'DaemonSet名称',
@@ -407,6 +424,7 @@ const translations = {
     'nav.securityManagement': 'Security Management',
     'nav.authorization': 'Authorization',
     'nav.audit': 'Audit',
+    'nav.searchPlaceholder': 'Please enter search content',
     'nav.policyManagement': 'Policy Management',
     'nav.configInspection': 'Config Inspection',
     'nav.securityMonitoring': 'Security Monitoring',
@@ -607,11 +625,20 @@ const translations = {
     'k8s.fetchSecretsFailed': 'Failed to fetch secrets',
     'k8s.fetchPVCsFailed': 'Failed to fetch PVCs',
     'k8s.deployments': 'Deployments',
+    'k8s.stateless': 'Stateless',
     'k8s.statefulsets': 'StatefulSets',
+    'k8s.stateful': 'Stateful',
     'k8s.daemonsets': 'DaemonSets',
     'k8s.jobs': 'Jobs',
     'k8s.cronjobs': 'CronJobs',
     'k8s.customResources': 'Custom Resources',
+    'k8s.nodePool': 'Node Pool',
+    'k8s.node': 'Node',
+    'k8s.componentManagement': 'Component Management',
+    'k8s.application': 'Application',
+    'k8s.inspectionAndDiagnosis': 'Inspection and Diagnosis',
+    'k8s.operationsManagement': 'Operations Management',
+    'k8s.costSuite': 'Cost Suite',
     'k8s.deploymentName': 'Deployment Name',
     'k8s.statefulSetName': 'StatefulSet Name',
     'k8s.daemonSetName': 'DaemonSet Name',
@@ -739,30 +766,64 @@ const translations = {
 
 export const LanguageProvider = ({ children }) => {
   const [language, setLanguage] = useState('zh-CN')
+  const hasFetchedRef = useRef(false) // 使用 ref 标记是否已尝试获取，避免重复调用
 
   useEffect(() => {
-    // 从后端获取用户的语言偏好
+    // 从后端获取用户的语言偏好（仅在用户已登录时，且只获取一次）
     const fetchLanguage = async () => {
+      // 如果已经尝试过获取，不再重复获取
+      if (hasFetchedRef.current) {
+        return
+      }
+
+      const token = localStorage.getItem('token')
+      if (!token) {
+        // 用户未登录，使用默认语言，标记为已处理
+        hasFetchedRef.current = true
+        return
+      }
+      
+      // 标记为已尝试获取
+      hasFetchedRef.current = true
+      
       try {
         const response = await api.get('/preference')
         if (response.data.data && response.data.data.language) {
           setLanguage(response.data.data.language)
         }
       } catch (err) {
-        console.error('获取语言偏好失败:', err)
+        // 401 错误表示未授权，可能是 token 过期或无效，静默处理
+        if (err.response?.status === 401) {
+          console.warn('获取语言偏好失败: 未授权，使用默认语言')
+          // 清除无效的 token
+          localStorage.removeItem('token')
+        } else {
+          console.error('获取语言偏好失败:', err)
+        }
         // 使用默认语言
       }
     }
     fetchLanguage()
-  }, [])
+  }, []) // 空依赖数组，只在组件挂载时执行一次
 
   const changeLanguage = async (newLanguage) => {
     setLanguage(newLanguage)
-    // 更新后端偏好设置
+    // 更新后端偏好设置（仅在用户已登录时）
+    const token = localStorage.getItem('token')
+    if (!token) {
+      // 用户未登录，不更新后端
+      return
+    }
+    
     try {
       await api.put('/preference', { language: newLanguage })
     } catch (err) {
-      console.error('更新语言偏好失败:', err)
+      // 401 错误表示未授权，静默处理
+      if (err.response?.status === 401) {
+        console.warn('更新语言偏好失败: 未授权')
+      } else {
+        console.error('更新语言偏好失败:', err)
+      }
     }
   }
 

@@ -28,6 +28,13 @@ const Preferences = () => {
   }, [preferences.theme])
 
   const fetchPreferences = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      setError('请先登录')
+      setLoading(false)
+      return
+    }
+    
     try {
       setLoading(true)
       const response = await api.get('/preference')
@@ -44,6 +51,11 @@ const Preferences = () => {
       }
     } catch (err) {
       console.error('获取偏好设置失败:', err)
+      if (err.response?.status === 401) {
+        setError('未授权，请重新登录')
+      } else {
+        setError(err.response?.data?.message || '获取偏好设置失败')
+      }
       // 如果获取失败，使用默认值
     } finally {
       setLoading(false)

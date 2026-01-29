@@ -86,6 +86,25 @@ const Sidebar = () => {
               path: `/k8s/cluster/${clusterId}?tab=nodes`,
               label: t('k8s.nodeManagement'),
               tab: 'nodes',
+              children: [
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=nodes&subtab=nodepool`,
+                  label: t('k8s.nodePool'),
+                  tab: 'nodes',
+                  subtab: 'nodepool',
+                },
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=nodes&subtab=node`,
+                  label: t('k8s.node'),
+                  tab: 'nodes',
+                  subtab: 'node',
+                },
+              ],
+            },
+            {
+              path: `/k8s/cluster/${clusterId}?tab=components`,
+              label: t('k8s.componentManagement'),
+              tab: 'components',
             },
             {
               path: `/k8s/cluster/${clusterId}?tab=namespaces`,
@@ -99,13 +118,13 @@ const Sidebar = () => {
               children: [
                 {
                   path: `/k8s/cluster/${clusterId}?tab=workloads&type=deployments`,
-                  label: t('k8s.deployments'),
+                  label: t('k8s.stateless'),
                   tab: 'workloads',
                   type: 'deployments',
                 },
                 {
                   path: `/k8s/cluster/${clusterId}?tab=workloads&type=statefulsets`,
-                  label: t('k8s.statefulsets'),
+                  label: t('k8s.stateful'),
                   tab: 'workloads',
                   type: 'statefulsets',
                 },
@@ -155,6 +174,26 @@ const Sidebar = () => {
               path: `/k8s/cluster/${clusterId}?tab=storage`,
               label: t('k8s.storage'),
               tab: 'storage',
+            },
+            {
+              path: `/k8s/cluster/${clusterId}?tab=application`,
+              label: t('k8s.application'),
+              tab: 'application',
+            },
+            {
+              path: `/k8s/cluster/${clusterId}?tab=inspection`,
+              label: t('k8s.inspectionAndDiagnosis'),
+              tab: 'inspection',
+            },
+            {
+              path: `/k8s/cluster/${clusterId}?tab=operations`,
+              label: t('k8s.operationsManagement'),
+              tab: 'operations',
+            },
+            {
+              path: `/k8s/cluster/${clusterId}?tab=cost`,
+              label: t('k8s.costSuite'),
+              tab: 'cost',
             },
             {
               path: `/k8s/cluster/${clusterId}?tab=security`,
@@ -311,14 +350,51 @@ const Sidebar = () => {
     return expandedSubMenus[path] || false
   }
 
+  const [searchTerm, setSearchTerm] = useState('')
+
+  // 过滤菜单项
+  const filterMenuItems = (items, term) => {
+    if (!term) return items
+    return items.filter(item => {
+      const labelMatch = item.label.toLowerCase().includes(term.toLowerCase())
+      const childrenMatch = item.children && filterMenuItems(item.children, term).length > 0
+      return labelMatch || childrenMatch
+    }).map(item => {
+      if (item.children) {
+        return {
+          ...item,
+          children: filterMenuItems(item.children, term)
+        }
+      }
+      return item
+    })
+  }
+
+  const filteredMenuItems = filterMenuItems(menuItems, searchTerm)
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
         <h2>{t('platform.name')}</h2>
       </div>
+      <div className="sidebar-search">
+        <div className="search-input-wrapper">
+          <svg className="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <input
+            type="text"
+            className="search-input"
+            placeholder={t('nav.searchPlaceholder')}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
       <nav className="sidebar-nav">
         <ul className="menu-list">
-          {menuItems.map((item) => {
+          {filteredMenuItems.map((item) => {
             if (item.children) {
               const isExpanded = expandedMenus[item.label]
               const active = hasActiveChild(item.children)
