@@ -4327,8 +4327,8 @@ const K8sClusterDetail = () => {
                             )}
                           </tbody>
                         </table>
-                      </div>
-                        )
+                          </div>
+                          )
                       })()}
 
                       {!selectedDeployment && workloadType === 'custom' && (
@@ -4353,8 +4353,6 @@ const K8sClusterDetail = () => {
                       )}
                     </div>
                   )}
-
-                  {activeTab === 'config' && (
                     <div className="config-section">
                       <div style={{ marginBottom: '24px' }}>
                         <h3 style={{ marginBottom: '16px' }}>{t('k8s.configMaps')}</h3>
