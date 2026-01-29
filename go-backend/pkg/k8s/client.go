@@ -237,6 +237,46 @@ func (c *Client) UpdateNamespace(ctx context.Context, name string, labels map[st
 	return updated, nil
 }
 
+// DeleteNamespace 删除命名空间
+func (c *Client) DeleteNamespace(ctx context.Context, name string) error {
+	err := c.clientset.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil {
+		return fmt.Errorf("删除命名空间失败: %w", err)
+	}
+	return nil
+}
+
+// GetNamespaceYAML 获取命名空间的YAML格式
+func (c *Client) GetNamespaceYAML(ctx context.Context, name string) (string, error) {
+	namespace, err := c.clientset.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("获取命名空间失败: %w", err)
+	}
+
+	// 转换为YAML
+	yamlBytes, err := yaml.Marshal(namespace)
+	if err != nil {
+		return "", fmt.Errorf("转换为YAML失败: %w", err)
+	}
+
+	return string(yamlBytes), nil
+}
+
+// UpdateNamespaceFromYAML 从YAML更新命名空间
+func (c *Client) UpdateNamespaceFromYAML(ctx context.Context, yamlContent string) (*corev1.Namespace, error) {
+	var namespace corev1.Namespace
+	if err := yaml.Unmarshal([]byte(yamlContent), &namespace); err != nil {
+		return nil, fmt.Errorf("解析YAML失败: %w", err)
+	}
+
+	updated, err := c.clientset.CoreV1().Namespaces().Update(ctx, &namespace, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("更新命名空间失败: %w", err)
+	}
+
+	return updated, nil
+}
+
 // GetPods 获取Pod列表（可选命名空间）
 func (c *Client) GetPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
 	var pods *corev1.PodList

@@ -770,6 +770,134 @@ func (h *K8sHandler) UpdateNamespace(c *gin.Context) {
 	utils.Success(c, nsInfo)
 }
 
+// DeleteNamespace 删除命名空间
+func (h *K8sHandler) DeleteNamespace(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	namespaceName := c.Param("namespace")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	// 创建K8s客户端
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx := context.Background()
+	if err := client.DeleteNamespace(ctx, namespaceName); err != nil {
+		utils.InternalServerError(c, "删除命名空间失败: "+err.Error())
+		return
+	}
+
+	utils.Success(c, gin.H{"message": "删除成功"})
+}
+
+// GetNamespaceYAML 获取命名空间的YAML
+func (h *K8sHandler) GetNamespaceYAML(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	namespaceName := c.Param("namespace")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	// 创建K8s客户端
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx := context.Background()
+	yamlContent, err := client.GetNamespaceYAML(ctx, namespaceName)
+	if err != nil {
+		utils.InternalServerError(c, "获取命名空间YAML失败: "+err.Error())
+		return
+	}
+
+	utils.Success(c, gin.H{"yaml": yamlContent})
+}
+
+// UpdateNamespaceYAML 更新命名空间的YAML
+func (h *K8sHandler) UpdateNamespaceYAML(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	namespaceName := c.Param("namespace")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		YAML string `json:"yaml" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+
+	// 创建K8s客户端
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx := context.Background()
+	namespace, err := client.UpdateNamespaceFromYAML(ctx, req.YAML)
+	if err != nil {
+		utils.InternalServerError(c, "更新命名空间YAML失败: "+err.Error())
+		return
+	}
+
+	// 安全校验：避免通过路由更新到其他命名空间
+	if namespace != nil && namespace.Name != namespaceName {
+		utils.BadRequest(c, "YAML中的命名空间名称与URL不一致")
+		return
+	}
+
+	utils.Success(c, namespace)
+}
+
 // 辅助函数：获取节点状态
 func getNodeStatus(node *corev1.Node) string {
 	for _, condition := range node.Status.Conditions {

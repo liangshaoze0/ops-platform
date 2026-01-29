@@ -153,6 +153,7 @@ const K8sClusterDetail = () => {
   const [showEditNamespaceModal, setShowEditNamespaceModal] = useState(false)
   const [showQuotaModal, setShowQuotaModal] = useState(false)
   const [editingNamespace, setEditingNamespace] = useState(null)
+  const [selectedDeployments, setSelectedDeployments] = useState([])
   
   // 创建命名空间状态
   const [newNamespaceName, setNewNamespaceName] = useState('')
@@ -697,6 +698,88 @@ const K8sClusterDetail = () => {
     }
   }
 
+  // 编辑命名空间YAML
+  const handleEditNamespaceYaml = async (namespace) => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 获取命名空间的YAML
+      const response = await api.get(`/k8s/clusters/${id}/namespaces/${namespace.name}/yaml`)
+      const yamlContent = response.data?.data?.yaml || response.data?.yaml || ''
+      
+      setPodYaml(yamlContent)
+      setEditingNamespace(namespace)
+      setShowYamlModal(true)
+    } catch (err) {
+      console.error('获取命名空间YAML失败:', err)
+      setError(err.response?.data?.message || t('k8s.fetchYamlFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 删除命名空间
+  const handleDeleteNamespace = async (namespace) => {
+    if (!window.confirm(t('k8s.confirmDeleteNamespace'))) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      
+      await api.delete(`/k8s/clusters/${id}/namespaces/${namespace.name}`)
+      
+      setSuccess(t('k8s.deleteNamespaceSuccess'))
+      setTimeout(() => {
+        fetchNamespaces()
+        setSuccess('')
+      }, 1000)
+    } catch (err) {
+      console.error('删除命名空间失败:', err)
+      setError(err.response?.data?.message || t('k8s.deleteNamespaceFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 切换命名空间删除保护
+  const handleToggleNamespaceDeletionProtection = async (namespace) => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 获取当前命名空间信息
+      const response = await api.get(`/k8s/clusters/${id}/namespaces/${namespace.name}`)
+      const nsData = response.data?.data || response.data
+      
+      // 检查是否已有删除保护（通过finalizer判断）
+      const hasProtection = nsData.finalizers && nsData.finalizers.includes('kubernetes')
+      const newProtection = !hasProtection
+      
+      // 更新删除保护状态
+      const payload = {
+        name: namespace.name,
+        deletionProtection: newProtection,
+        labels: nsData.labels || {},
+      }
+      
+      await api.put(`/k8s/clusters/${id}/namespaces/${namespace.name}`, payload)
+      
+      setSuccess(newProtection ? t('k8s.enableDeletionProtectionSuccess') : t('k8s.disableDeletionProtectionSuccess'))
+      setTimeout(() => {
+        fetchNamespaces()
+        setSuccess('')
+      }, 1000)
+    } catch (err) {
+      console.error('切换删除保护失败:', err)
+      setError(err.response?.data?.message || t('k8s.toggleDeletionProtectionFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // 创建命名空间
   const handleCreateNamespace = async () => {
     if (!newNamespaceName.trim()) {
@@ -1211,6 +1294,29 @@ const K8sClusterDetail = () => {
   }
 
   const handleSaveYaml = async () => {
+    // 如果是命名空间，使用命名空间的更新逻辑
+    if (editingNamespace && !editingPod) {
+      try {
+        setLoading(true)
+        setError('')
+        await api.put(`/k8s/clusters/${id}/namespaces/${editingNamespace.name}/yaml`, {
+          yaml: podYaml
+        })
+        setSuccess(t('k8s.updateYamlSuccess'))
+        setShowYamlModal(false)
+        setPodYaml('')
+        setEditingNamespace(null)
+        fetchNamespaces()
+        setTimeout(() => setSuccess(''), 1000)
+      } catch (err) {
+        setError(err.response?.data?.message || t('k8s.updateYamlFailed'))
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
+    // 原有的Pod更新逻辑
     if (!editingPod) return
 
     try {
@@ -2388,17 +2494,10 @@ const K8sClusterDetail = () => {
                                           }}
                                         />
                                             </td>
-                                      <td>
-                                          <a 
-                                            href="#" 
-                                          className="namespace-link"
-                                            onClick={(e) => {
-                                              e.preventDefault()
-                                            setSelectedNamespace(ns.name)
-                                          }}
-                                        >
+                                            <td>
+                                        <span className="namespace-link">
                                           {ns.name}
-                                        </a>
+                                              </span>
                                             </td>
                                       <td></td>
                                       <td>
@@ -2412,89 +2511,89 @@ const K8sClusterDetail = () => {
                                         <span className={`status-badge ${ns.status === 'Active' ? 'status-connected' : 'status-unknown'}`}>
                                           <span className="status-icon">✓</span> {t('k8s.ready')}
                                   </span>
-                                        </td>
+                                            </td>
                                       <td>
                                         {ns.created_at ? new Date(ns.created_at).toLocaleString('zh-CN') : '-'}
-                                          </td>
-                                        <td>
-                                          <div className="action-buttons">
-                                            <button 
+                                            </td>
+                                            <td>
+                                              <div className="action-buttons">
+                                <button
                                             className="btn-text"
-                                              onClick={() => {
+                                                  onClick={() => {
                                               setEditingNamespace(ns)
                                               setShowQuotaModal(true)
-                                            }}
-                                          >
+                                                  }}
+                                                >
                                             {t('k8s.resourceQuotaAndLimits')}
-                                            </button>
-                                            <button 
-                                            className="btn-text"
-                                              onClick={() => {
+                                </button>
+                                                <button 
+                                                  className="btn-text"
+                                                  onClick={() => {
                                               setEditingNamespace(ns)
                                               setShowEditNamespaceModal(true)
-                                              }}
-                                            >
-                                              {t('common.edit')}
-                                            </button>
-                                            <div className="action-dropdown">
-                                              <button 
+                                }}
+                              >
+                                {t('common.edit')}
+                              </button>
+                              <div className="action-dropdown">
+                                <button 
                                                 className="btn-text btn-more"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
                                                   if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
-                                                      menu.classList.remove('show')
-                                                    }
-                                                  })
+                                        menu.classList.remove('show')
+                                      }
+                                    })
                                                 const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
-                                                    dropdown.classList.toggle('show')
-                                                }}
-                                              >
+                                      dropdown.classList.toggle('show')
+                                  }}
+                                >
                                               ⋮
-                                              </button>
-                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                </button>
+                                <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
                                             <button 
                                                   disabled
                                                   style={{ opacity: 0.5, cursor: 'not-allowed' }}
                                               onClick={() => {
-                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                                   }}
                                                 >
-                                                  {t('k8s.monitoring')}
-                                                </button>
-                                                <button onClick={() => {
+                                    {t('k8s.monitoring')}
+                                  </button>
+                                  <button onClick={() => {
                                                   handleEditNamespaceYaml(ns)
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                }}>
-                                                  {t('k8s.yamlEdit')}
-                                                </button>
-                                                <button
-                                                  className="danger"
-                                                  onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.yamlEdit')}
+                                  </button>
+                                  <button
+                                    className="danger"
+                                    onClick={() => {
                                                     handleDeleteNamespace(ns)
-                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                  }}
-                                                >
-                                                  {t('common.delete')}
-                                                </button>
+                                      document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    }}
+                                  >
+                                    {t('common.delete')}
+                                  </button>
                                                   <button onClick={() => {
                                                   handleToggleNamespaceDeletionProtection(ns)
                                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                                   }}>
                                                   {t('k8s.enableDeletionProtection')}
-                  </button>
-                </div>
-              </div>
-            </div>
-                                </td>
-                              </tr>
-                                  ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                        </div>
-                      )}
+                            </button>
+                          </div>
+                                            </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    )}
+                                  </tbody>
+                                </table>
+                                        </div>
+                                      </div>
+                                    )}
                       {!loading && !selectedNamespace && namespaces.length > 0 && (
                         <Pagination
                           currentPage={namespacesPage}
@@ -2529,11 +2628,11 @@ const K8sClusterDetail = () => {
                           }}
                         />
                       )}
-                    </div>
+                              </div>
                   )}
                 </>
-              )}
-            </div>
+                                            )}
+                                          </div>
           </div>
 
           {/* 日志查看模态框 */}
@@ -2542,34 +2641,261 @@ const K8sClusterDetail = () => {
               <div className="modal-content logs-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-header">
                   <h2>{t('k8s.podLogs')} - {editingPod?.name}</h2>
-                  <button
+                                            <button 
                     className="modal-close"
-                    onClick={() => {
+                                              onClick={() => {
                       setShowLogsModal(false)
                       setEditingPod(null)
                       setPodLogs('')
                     }}
                   >
                     {t('common.close')}
-                  </button>
+                                            </button>
                 </div>
                 <div className="logs-container">
                   <pre className="logs-content">{podLogs || t('k8s.noLogs')}</pre>
                 </div>
                 <div className="modal-actions">
-                  <button
+                                            <button 
                     type="button"
                     className="btn-secondary"
-                    onClick={() => {
+                                              onClick={() => {
                       setShowLogsModal(false)
                       setEditingPod(null)
                       setPodLogs('')
                     }}
                   >
                     {t('common.close')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+          )}
+
+                  {activeTab === 'workloads' && (
+                    <div className="workloads-section">
+                      {/* 无状态 Deployment 列表 */}
+                      {workloadType === 'deployments' && (
+                        <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>无状态 <span className="deployment-subtitle">Deployment</span></h2>
+                                          </div>
+                                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button className="btn-primary" disabled>
+                                使用镜像创建
+                                            </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                                            </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedWorkloadNamespace}
+                                  onChange={(e) => setSelectedWorkloadNamespace(e.target.value)}
+                                >
+                                  <option value="">{t('k8s.allNamespaces')}</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">{t('k8s.name')}</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder={t('k8s.searchPlaceholder')}
+                                    value={workloadSearchTerm}
+                                    onChange={(e) => setWorkloadSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchDeployments(selectedWorkloadNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                                <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchDeployments(selectedWorkloadNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="icon-btn" disabled title="设置">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.56 3.76 2.2 2.2 0 0 1-1.56-.64l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V22a2.2 2.2 0 0 1-4.4 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 1 1-3.12-3.12l.04-.04A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H2a2.2 2.2 0 0 1 0-4.4h-.06A1.8 1.8 0 0 0 3.6 8.4a1.8 1.8 0 0 0 .36-1.98l-.04-.04A2.2 2.2 0 1 1 7.04 3.2l.04.04A1.8 1.8 0 0 0 9.06 3.6a1.8 1.8 0 0 0 1.1-1.66V2a2.2 2.2 0 0 1 4.4 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 1 1 3.12 3.12l-.04.04A1.8 1.8 0 0 0 20.4 8.4a1.8 1.8 0 0 0 1.66 1.1H22a2.2 2.2 0 0 1 0 4.4h-.06a1.8 1.8 0 0 0-1.66 1.1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchDeployments(selectedWorkloadNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                          </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                    <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedDeployments.length === deployments.length && deployments.length > 0}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedDeployments(deployments.map(d => `${d.namespace}/${d.name}`))
+                                        } else {
+                                          setSelectedDeployments([])
+                                        }
+                                      }}
+                                    />
+                                    </th>
+                                    <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>标签</th>
+                                  <th>容器组数量</th>
+                                  <th>{t('k8s.image')}</th>
+                                    <th>{t('k8s.createdAt')}</th>
+                                  <th>{t('k8s.updatedAt')}</th>
+                                    <th>{t('common.actions')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {deployments
+                                  .filter((d) => {
+                                    if (!workloadSearchTerm) return true
+                                    return (d.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                  })
+                                  .map((d) => {
+                                    const key = `${d.namespace}/${d.name}`
+                                      return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedDeployments.includes(key)}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedDeployments([...selectedDeployments, key])
+                                              } else {
+                                                setSelectedDeployments(selectedDeployments.filter(x => x !== key))
+                                              }
+                                            }}
+                                          />
+                                          </td>
+                                        <td className="name-cell">{d.name}</td>
+                                        <td>{d.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {d.labels && Object.keys(d.labels).length > 0 ? (
+                                            <span className="label-icon">🏷</span>
+                                            ) : (
+                                              '-'
+                                            )}
+                                          </td>
+                                      <td>
+                                          {(d.readyReplicas ?? d.ready_replicas ?? 0)}/{(d.replicas ?? 0)}
+                                      </td>
+                                        <td className="images-cell">
+                                          {d.image || (Array.isArray(d.images) && d.images.length ? d.images[0] : '-') }
+                                          </td>
+                                        <td>{d.created_at ? new Date(d.created_at).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>{d.updated_at ? new Date(d.updated_at).toLocaleString('zh-CN') : '-'}</td>
+                                          <td>
+                                            <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => handleDeploymentClick(d)}>
+                                              详情
+                  </button>
+                                            <button className="btn-text" onClick={() => handleEditDeploymentLabels(d)}>
+                                              编辑
+                                            </button>
+                                            <button className="btn-text" onClick={() => handleScaleDeployment(d)}>
+                                              伸缩
+                                            </button>
+                                              <div className="action-dropdown">
+                                                <button 
+                                                  className="btn-text btn-more"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                        menu.classList.remove('show')
+                                                      }
+                                                    })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                      dropdown.classList.toggle('show')
+                                                  }}
+                                                >
+                                                ⋮
+                    </button>
+                                                <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                  <button onClick={() => {
+                                                  handleRedeploy(d)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}>
+                                                  重新部署
+                    </button>
+                                                <button className="danger" onClick={() => {
+                                                  handleDeleteDeployment(d)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}>
+                                                    {t('common.delete')}
                   </button>
                 </div>
               </div>
+            </div>
+                                </td>
+                              </tr>
+                                    )
+                                  })}
+                                {deployments.length === 0 && (
+                                  <tr>
+                                    <td colSpan="9" className="empty-state">{t('k8s.noDeployments')}</td>
+                                  </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                          {!loading && deployments.length > 0 && (
+                        <Pagination
+                          currentPage={workloadsPage}
+                          totalPages={Math.ceil(workloadsTotal / workloadsPageSize)}
+                          totalItems={workloadsTotal}
+                          pageSize={workloadsPageSize}
+                              onPageChange={(page) => {
+                                setWorkloadsPage(page)
+                                fetchDeployments(selectedWorkloadNamespace || '')
+                              }}
+                          onPageSizeChange={(newSize) => {
+                            setWorkloadsPageSize(newSize)
+                            setWorkloadsPage(1)
+                                fetchDeployments(selectedWorkloadNamespace || '')
+                          }}
+                        />
+                      )}
+                        </div>
+                      )}
             </div>
           )}
 
