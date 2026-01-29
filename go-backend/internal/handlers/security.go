@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"time"
 
 	"develops-ai/internal/models"
@@ -276,11 +277,17 @@ func (h *SecurityHandler) RunInspection(c *gin.Context) {
 		},
 	}
 
+	successCount := 0
 	for _, inspection := range inspections {
-		h.db.Create(&inspection)
+		if err := h.db.Create(&inspection).Error; err != nil {
+			// 记录错误但继续处理其他巡检项
+			log.Printf("创建配置巡检记录失败: %v", err)
+			continue
+		}
+		successCount++
 	}
 
-	utils.Success(c, gin.H{"message": "配置巡检执行成功", "count": len(inspections)})
+	utils.Success(c, gin.H{"message": "配置巡检执行成功", "count": successCount, "total": len(inspections)})
 }
 
 // GetSecurityAlerts 获取安全告警列表
