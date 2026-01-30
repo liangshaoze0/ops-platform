@@ -168,7 +168,7 @@ const translations = {
     'k8s.os': '操作系统',
     'k8s.cpu': 'CPU',
     'k8s.memory': '内存',
-    'k8s.pods': 'Pod数量',
+    'k8s.pods': '容器组',
     'k8s.namespaceName': '命名空间名称',
     'k8s.labels': '标签',
     'k8s.noNodes': '暂无节点',

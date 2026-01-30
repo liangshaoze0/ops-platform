@@ -77,11 +77,6 @@ const K8sClusterDetail = () => {
   const [editingHpa, setEditingHpa] = useState(null)
   const [editingCronHpa, setEditingCronHpa] = useState(null)
   const [deploymentHistoryVersions, setDeploymentHistoryVersions] = useState([])
-  const [selectedStatefulSet, setSelectedStatefulSet] = useState(null)
-  const [statefulSetDetail, setStatefulSetDetail] = useState(null)
-  const [statefulSetPods, setStatefulSetPods] = useState([])
-  const [statefulSetDetailTab, setStatefulSetDetailTab] = useState('pods')
-  const [statefulSetCostInfo, setStatefulSetCostInfo] = useState(null)
   const [showEditDeploymentModal, setShowEditDeploymentModal] = useState(false)
   const [editingDeployment, setEditingDeployment] = useState(null)
   const [editDeploymentData, setEditDeploymentData] = useState({
@@ -104,20 +99,6 @@ const K8sClusterDetail = () => {
   const [showRollbackModal, setShowRollbackModal] = useState(false)
   const [showMonitoringModal, setShowMonitoringModal] = useState(false)
   const [showOptimizationModal, setShowOptimizationModal] = useState(false)
-  const [showEditStatefulSetModal, setShowEditStatefulSetModal] = useState(false)
-  const [editingStatefulSet, setEditingStatefulSet] = useState(null)
-  const [editStatefulSetData, setEditStatefulSetData] = useState({
-    replicas: 1,
-    image: '',
-    labels: {},
-    annotations: {}
-  })
-  const [showScaleStatefulSetModal, setShowScaleStatefulSetModal] = useState(false)
-  const [scalingStatefulSet, setScalingStatefulSet] = useState(null)
-  const [scaleStatefulSetReplicas, setScaleStatefulSetReplicas] = useState(1)
-  const [showStatefulSetYamlEditModal, setShowStatefulSetYamlEditModal] = useState(false)
-  const [editingStatefulSetYaml, setEditingStatefulSetYaml] = useState(null)
-  const [statefulSetYaml, setStatefulSetYaml] = useState('')
   
   // 分页状态
   const [nodesPage, setNodesPage] = useState(1)
@@ -199,6 +180,27 @@ const K8sClusterDetail = () => {
     podLabels: {},
     podAnnotations: {},
   })
+  
+  // StatefulSet 详情状态
+  const [selectedStatefulSet, setSelectedStatefulSet] = useState(null)
+  const [statefulSetDetail, setStatefulSetDetail] = useState(null)
+  const [statefulSetPods, setStatefulSetPods] = useState([])
+  const [statefulSetDetailTab, setStatefulSetDetailTab] = useState('pods')
+  const [statefulSetCostInfo, setStatefulSetCostInfo] = useState(null)
+  const [showEditStatefulSetModal, setShowEditStatefulSetModal] = useState(false)
+  const [editingStatefulSet, setEditingStatefulSet] = useState(null)
+  const [editStatefulSetData, setEditStatefulSetData] = useState({
+    replicas: 1,
+    image: '',
+    labels: {},
+    annotations: {}
+  })
+  const [showScaleStatefulSetModal, setShowScaleStatefulSetModal] = useState(false)
+  const [scalingStatefulSet, setScalingStatefulSet] = useState(null)
+  const [scaleStatefulSetReplicas, setScaleStatefulSetReplicas] = useState(1)
+  const [showStatefulSetYamlEditModal, setShowStatefulSetYamlEditModal] = useState(false)
+  const [editingStatefulSetYaml, setEditingStatefulSetYaml] = useState(null)
+  const [statefulSetYaml, setStatefulSetYaml] = useState('')
   
   // 创建 StatefulSet 状态
   const [showCreateStatefulSetModal, setShowCreateStatefulSetModal] = useState(false)
@@ -460,6 +462,10 @@ const K8sClusterDetail = () => {
   const isLoadingDeploymentRef = useRef(false)
   // 使用ref跟踪已加载的deployment，避免重复加载
   const loadedDeploymentRef = useRef(null)
+  // 使用ref来跟踪是否正在加载StatefulSet，避免重复加载
+  const isLoadingStatefulSetRef = useRef(false)
+  // 使用ref跟踪已加载的StatefulSet，避免重复加载
+  const loadedStatefulSetRef = useRef(null)
   
   // 加载deployment详情的内部函数（不更新URL）
   const loadDeploymentDetail = useCallback(async (deployment) => {
@@ -543,6 +549,75 @@ const K8sClusterDetail = () => {
     } finally {
       setLoading(false)
       isLoadingDeploymentRef.current = false
+    }
+  }, [id, t])
+  
+  // 加载StatefulSet详情的内部函数（不更新URL）
+  const loadStatefulSetDetail = useCallback(async (statefulSet) => {
+    if (isLoadingStatefulSetRef.current) {
+      console.log('正在加载StatefulSet详情，跳过重复请求')
+      return
+    }
+    
+    try {
+      isLoadingStatefulSetRef.current = true
+      setLoading(true)
+      setError('')
+      
+      console.log('开始加载StatefulSet详情:', statefulSet)
+      
+      // 获取StatefulSet详情
+      const detailResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}`)
+      if (detailResponse.data && detailResponse.data.data) {
+        setStatefulSetDetail(detailResponse.data.data)
+        console.log('StatefulSet详情加载成功:', detailResponse.data.data)
+      } else {
+        throw new Error('获取StatefulSet详情失败：响应数据格式错误')
+      }
+      
+      // 获取关联的Pods
+      try {
+        const podsResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/pods`)
+        let podsData = []
+        if (podsResponse.data) {
+          if (podsResponse.data.data !== undefined) {
+            if (Array.isArray(podsResponse.data.data)) {
+              podsData = podsResponse.data.data
+            }
+          } else if (Array.isArray(podsResponse.data)) {
+            podsData = podsResponse.data
+          }
+        }
+        setStatefulSetPods(podsData)
+        console.log('Pods加载成功，数量:', podsData.length)
+      } catch (podsErr) {
+        setStatefulSetPods([])
+        if (podsErr.response?.status !== 404) {
+          setError(podsErr.response?.data?.message || podsErr.message || '获取Pod列表失败')
+        }
+      }
+      
+      // 获取成本信息
+      try {
+        const costResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/cost`)
+        if (costResponse.data && costResponse.data.data) {
+          setStatefulSetCostInfo(costResponse.data.data)
+        } else if (costResponse.data) {
+          setStatefulSetCostInfo(costResponse.data)
+        }
+      } catch (costErr) {
+        setStatefulSetCostInfo(null)
+      }
+      
+    } catch (err) {
+      console.error('获取StatefulSet详情失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.fetchDetailFailed'))
+      setSelectedStatefulSet(null)
+      setStatefulSetDetail(null)
+      setStatefulSetPods([])
+    } finally {
+      setLoading(false)
+      isLoadingStatefulSetRef.current = false
     }
   }, [id, t])
   
@@ -654,6 +729,64 @@ const K8sClusterDetail = () => {
       }
     }
   }, [selectedDeployment, deploymentDetail, activeTab, id, loadDeploymentDetail, searchParams])
+  
+  // 从URL参数恢复StatefulSet详情（页面刷新后）
+  useEffect(() => {
+    const statefulSetName = searchParams.get('statefulset')
+    const statefulSetNamespace = searchParams.get('statefulsetNamespace')
+    
+    if (statefulSetName && statefulSetNamespace && activeTab === 'workloads' && id) {
+      const statefulSetKey = `${statefulSetNamespace}/${statefulSetName}`
+      const currentKey = selectedStatefulSet 
+        ? `${selectedStatefulSet.namespace}/${selectedStatefulSet.name}` 
+        : null
+      
+      const needsLoad = !selectedStatefulSet || 
+                       (loadedStatefulSetRef.current !== statefulSetKey && !isLoadingStatefulSetRef.current) ||
+                       (currentKey !== statefulSetKey && !isLoadingStatefulSetRef.current) ||
+                       (currentKey === statefulSetKey && !statefulSetDetail && !isLoadingStatefulSetRef.current)
+      
+      if (needsLoad) {
+        const statefulSet = { name: statefulSetName, namespace: statefulSetNamespace }
+        setSelectedStatefulSet(statefulSet)
+        loadedStatefulSetRef.current = statefulSetKey
+        loadStatefulSetDetail(statefulSet).then(() => {
+          loadedStatefulSetRef.current = statefulSetKey
+        }).catch((err) => {
+          console.error('加载StatefulSet详情失败:', err)
+          loadedStatefulSetRef.current = null
+        })
+      }
+    } else if (!statefulSetName && !statefulSetNamespace && selectedStatefulSet && activeTab === 'workloads') {
+      if (searchParams.get('view') !== 'detail') {
+        setSelectedStatefulSet(null)
+        setStatefulSetDetail(null)
+        setStatefulSetPods([])
+        loadedStatefulSetRef.current = null
+      }
+    }
+  }, [selectedStatefulSet, statefulSetDetail, activeTab, id, loadStatefulSetDetail, searchParams])
+  
+  // 额外的useEffect：确保在selectedStatefulSet存在但statefulSetDetail为空时加载（页面刷新后）
+  useEffect(() => {
+    if (selectedStatefulSet && !statefulSetDetail && activeTab === 'workloads' && id && !isLoadingStatefulSetRef.current) {
+      const statefulSetKey = `${selectedStatefulSet.namespace}/${selectedStatefulSet.name}`
+      const urlStatefulSetName = searchParams.get('statefulset')
+      const urlStatefulSetNamespace = searchParams.get('statefulsetNamespace')
+      
+      if (urlStatefulSetName === selectedStatefulSet.name && 
+          urlStatefulSetNamespace === selectedStatefulSet.namespace &&
+          loadedStatefulSetRef.current !== statefulSetKey) {
+        loadedStatefulSetRef.current = statefulSetKey
+        loadStatefulSetDetail(selectedStatefulSet).then(() => {
+          loadedStatefulSetRef.current = statefulSetKey
+        }).catch((err) => {
+          console.error('加载StatefulSet详情失败:', err)
+          loadedStatefulSetRef.current = null
+        })
+      }
+    }
+  }, [selectedStatefulSet, statefulSetDetail, activeTab, id, loadStatefulSetDetail, searchParams])
 
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -995,6 +1128,169 @@ const K8sClusterDetail = () => {
     }
   }
 
+  // 创建 StatefulSet
+  const handleCreateStatefulSet = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 验证必填字段
+      if (!createStatefulSetData.name || !createStatefulSetData.name.trim()) {
+        setError(t('k8s.nameAndNamespaceRequired'))
+        setLoading(false)
+        return
+      }
+      
+      if (!createStatefulSetData.namespace || !createStatefulSetData.namespace.trim()) {
+        setError(t('k8s.nameAndNamespaceRequired'))
+        setLoading(false)
+        return
+      }
+      
+      // 确保 replicas 是有效的整数且至少为 1
+      const replicas = parseInt(createStatefulSetData.replicas) || 1
+      if (replicas < 1) {
+        setError(t('k8s.invalidReplicas'))
+        setLoading(false)
+        return
+      }
+      
+      // 验证容器配置
+      if (!createStatefulSetData.containers || createStatefulSetData.containers.length === 0) {
+        setError(t('k8s.imageRequired'))
+        setLoading(false)
+        return
+      }
+      
+      // 验证每个容器都有镜像
+      for (const container of createStatefulSetData.containers) {
+        if (!container.image || !container.image.trim()) {
+          setError(t('k8s.imageRequired'))
+          setLoading(false)
+          return
+        }
+      }
+      
+      // 过滤掉空的标签和注解
+      const filteredLabels = {}
+      Object.entries(createStatefulSetData.labels || {}).forEach(([key, value]) => {
+        if (key.trim() && value.trim()) {
+          filteredLabels[key.trim()] = value.trim()
+        }
+      })
+      
+      const filteredAnnotations = {}
+      Object.entries(createStatefulSetData.annotations || {}).forEach(([key, value]) => {
+        if (key.trim() && value.trim()) {
+          filteredAnnotations[key.trim()] = value.trim()
+        }
+      })
+      
+      const filteredPodLabels = {}
+      Object.entries(createStatefulSetData.podLabels || {}).forEach(([key, value]) => {
+        if (key.trim() && value.trim()) {
+          filteredPodLabels[key.trim()] = value.trim()
+        }
+      })
+      
+      const filteredPodAnnotations = {}
+      Object.entries(createStatefulSetData.podAnnotations || {}).forEach(([key, value]) => {
+        if (key.trim() && value.trim()) {
+          filteredPodAnnotations[key.trim()] = value.trim()
+        }
+      })
+      
+      const payload = {
+        name: createStatefulSetData.name.trim(),
+        namespace: createStatefulSetData.namespace.trim(),
+        replicas: replicas,
+        labels: filteredLabels,
+        annotations: filteredAnnotations,
+        containers: createStatefulSetData.containers.map(container => ({
+          name: container.name || `container-${Math.random().toString(36).substr(2, 9)}`,
+          image: container.image.trim(),
+          imagePullPolicy: container.imagePullPolicy || 'IfNotPresent',
+          imageSecret: container.imageSecret || '',
+          cpuLimit: container.cpuLimit || '',
+          memoryLimit: container.memoryLimit || '',
+          ephemeralStorageLimit: container.ephemeralStorageLimit || '',
+          gpuType: container.gpuType || 'none',
+          cpuRequest: container.cpuRequest || '',
+          memoryRequest: container.memoryRequest || '',
+          ephemeralStorageRequest: container.ephemeralStorageRequest || '',
+          stdin: container.stdin || false,
+          tty: container.tty || false,
+          privileged: container.privileged || false,
+          initContainer: container.initContainer || false,
+          ports: (container.ports || []).filter(port => port.containerPort > 0),
+          envVars: (container.envVars || []).filter(env => env.name && env.name.trim()),
+        })),
+        podLabels: filteredPodLabels,
+        podAnnotations: filteredPodAnnotations,
+        timeZoneSync: createStatefulSetData.timeZoneSync || false,
+        hpaEnabled: createStatefulSetData.hpaEnabled || false,
+        cronHpaEnabled: createStatefulSetData.cronHpaEnabled || false,
+        upgradeStrategy: createStatefulSetData.upgradeStrategy || false,
+        nodeAffinity: createStatefulSetData.nodeAffinity || [],
+        podAffinity: createStatefulSetData.podAffinity || [],
+        podAntiAffinity: createStatefulSetData.podAntiAffinity || [],
+        tolerations: createStatefulSetData.tolerations || [],
+      }
+
+      await api.post(`/k8s/clusters/${id}/statefulsets`, payload)
+      
+      setSuccess(t('k8s.createStatefulSetSuccess'))
+      // 刷新 StatefulSet 列表
+      fetchStatefulSets(createStatefulSetData.namespace)
+      
+      // 关闭模态框并重置数据
+      setShowCreateStatefulSetModal(false)
+      setCreateStatefulSetStep(1)
+      setCreateStatefulSetData({
+        name: '',
+        namespace: 'default',
+        replicas: 2,
+        type: 'StatefulSet',
+        labels: {},
+        annotations: {},
+        timeZoneSync: false,
+        containers: [{
+          name: 'container-1',
+          image: '',
+          imagePullPolicy: 'IfNotPresent',
+          imageSecret: '',
+          cpuLimit: '',
+          memoryLimit: '',
+          ephemeralStorageLimit: '',
+          gpuType: 'none',
+          cpuRequest: '0.25',
+          memoryRequest: '512Mi',
+          ephemeralStorageRequest: '',
+          stdin: false,
+          tty: false,
+          privileged: false,
+          initContainer: false,
+          ports: [],
+          envVars: [],
+        }],
+        hpaEnabled: false,
+        cronHpaEnabled: false,
+        upgradeStrategy: false,
+        nodeAffinity: [],
+        podAffinity: [],
+        podAntiAffinity: [],
+        tolerations: [],
+        podLabels: {},
+        podAnnotations: {},
+      })
+    } catch (err) {
+      console.error('创建 StatefulSet 失败:', err)
+      setError(err.response?.data?.message || t('k8s.createStatefulSetFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // 创建命名空间
   const handleCreateNamespace = async () => {
     if (!newNamespaceName.trim()) {
@@ -1147,17 +1443,21 @@ const K8sClusterDetail = () => {
     }
   }
 
-  const fetchWorkloads = async (namespace = '') => {
+  const fetchWorkloads = async (namespace = '', page = null) => {
     try {
       setLoading(true)
       setError('')
-      const response = await api.get(`/k8s/clusters/${id}/pods`, {
-        params: {
-          namespace: namespace || undefined,
-          page: workloadsPage,
-          page_size: workloadsPageSize,
-        },
-      })
+      const currentPage = page !== null ? page : workloadsPage
+      const params = {
+        page: currentPage,
+        page_size: workloadsPageSize,
+      }
+      // 如果指定了命名空间，添加到参数中；如果为空字符串，不传递该参数（获取所有命名空间的 Pod）
+      if (namespace && namespace.trim()) {
+        params.namespace = namespace.trim()
+      }
+      
+      const response = await api.get(`/k8s/clusters/${id}/pods`, { params })
       const data = response.data.data || response.data
       if (data.data) {
         setWorkloads(data.data)
@@ -1167,7 +1467,7 @@ const K8sClusterDetail = () => {
         setWorkloadsTotal(Array.isArray(data) ? data.length : 0)
       }
     } catch (err) {
-      console.error('获取工作负载失败:', err)
+      console.error('获取 Pod 列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchWorkloadsFailed'))
     } finally {
       setLoading(false)
@@ -1595,6 +1895,33 @@ const K8sClusterDetail = () => {
     await loadDeploymentDetail(deployment)
   }
   
+  // StatefulSet相关处理函数
+  const handleStatefulSetClick = async (statefulSet) => {
+    // 跳转到新页面，使用URL参数
+    const newParams = new URLSearchParams()
+    newParams.set('tab', 'workloads')
+    newParams.set('type', 'statefulsets')
+    newParams.set('statefulset', statefulSet.name)
+    newParams.set('statefulsetNamespace', statefulSet.namespace)
+    newParams.set('view', 'detail')
+    
+    // 使用 navigate 跳转，看起来像新页面
+    navigate(`/k8s/cluster/${id}?${newParams.toString()}`, { replace: false })
+    
+    // 滚动到页面顶部
+    window.scrollTo(0, 0)
+    
+    // 设置状态
+    setSelectedStatefulSet(statefulSet)
+    
+    // 更新ref，标记为已加载
+    const statefulSetKey = `${statefulSet.namespace}/${statefulSet.name}`
+    loadedStatefulSetRef.current = statefulSetKey
+    
+    // 使用内部函数加载详情
+    await loadStatefulSetDetail(statefulSet)
+  }
+  
   // 保留原有的handleDeploymentClick逻辑作为备用（已重构为loadDeploymentDetail）
   const handleDeploymentClickOld = async (deployment) => {
     try {
@@ -1955,184 +2282,6 @@ const K8sClusterDetail = () => {
     }
   }
 
-  // StatefulSet相关处理函数
-  const handleStatefulSetClick = async (statefulSet) => {
-    try {
-      setLoading(true)
-      setError('')
-      setSelectedStatefulSet(statefulSet)
-      
-      // 获取StatefulSet详情
-      const detailResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}`)
-      if (detailResponse.data && detailResponse.data.data) {
-        setStatefulSetDetail(detailResponse.data.data)
-      } else {
-        throw new Error('获取StatefulSet详情失败：响应数据格式错误')
-      }
-      
-      // 获取关联的Pods
-      try {
-        const podsResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/pods`)
-        console.log('StatefulSet Pods API响应:', podsResponse)
-        
-        let podsData = []
-        if (podsResponse.data) {
-          if (podsResponse.data.data && Array.isArray(podsResponse.data.data)) {
-            podsData = podsResponse.data.data
-          } else if (Array.isArray(podsResponse.data)) {
-            podsData = podsResponse.data
-          } else if (podsResponse.data.data && Array.isArray(podsResponse.data.data)) {
-            podsData = podsResponse.data.data
-          }
-        }
-        
-        setStatefulSetPods(podsData)
-        if (podsData.length === 0) {
-          setError('')
-          console.warn('StatefulSet没有关联的Pods')
-        }
-      } catch (podsErr) {
-        console.error('获取StatefulSet Pods失败:', podsErr)
-        setStatefulSetPods([])
-        if (podsErr.response?.status !== 404) {
-          setError(podsErr.response?.data?.message || podsErr.message || '获取Pod列表失败，但StatefulSet详情已加载')
-        } else {
-          setError('')
-        }
-      }
-      
-      // 获取成本信息
-      try {
-        const costResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/cost`)
-        if (costResponse.data && costResponse.data.data) {
-          setStatefulSetCostInfo(costResponse.data.data)
-        } else if (costResponse.data) {
-          setStatefulSetCostInfo(costResponse.data)
-        }
-      } catch (costErr) {
-        console.warn('获取StatefulSet成本信息失败:', costErr)
-        setStatefulSetCostInfo(null)
-      }
-      
-    } catch (err) {
-      console.error('获取StatefulSet详情失败:', err)
-      setError(err.response?.data?.message || err.message || t('k8s.fetchDetailFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleBackFromStatefulSetDetail = () => {
-    setSelectedStatefulSet(null)
-    setStatefulSetDetail(null)
-    setStatefulSetPods([])
-    setStatefulSetCostInfo(null)
-    setStatefulSetDetailTab('pods')
-  }
-
-  const handleEditStatefulSetYaml = async (statefulSet) => {
-    try {
-      setLoading(true)
-      const response = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/yaml`)
-      if (response.data && response.data.data) {
-        setStatefulSetYaml(response.data.data.yaml || response.data.data)
-      } else {
-        setStatefulSetYaml(response.data.yaml || '')
-      }
-      setEditingStatefulSetYaml(statefulSet)
-      setShowStatefulSetYamlEditModal(true)
-    } catch (err) {
-      console.error('获取StatefulSet YAML失败:', err)
-      setError(err.response?.data?.message || err.message || t('k8s.fetchYamlFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRedeployStatefulSet = async (statefulSet) => {
-    if (!window.confirm(t('k8s.confirmRedeploy'))) {
-      return
-    }
-    try {
-      setLoading(true)
-      await api.post(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/redeploy`)
-      if (selectedWorkloadNamespace) {
-        fetchStatefulSets(selectedWorkloadNamespace)
-      } else {
-        fetchStatefulSets()
-      }
-    } catch (err) {
-      console.error('重新部署StatefulSet失败:', err)
-      setError(err.response?.data?.message || err.message || t('k8s.redeployFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleEditStatefulSetLabels = (statefulSet) => {
-    setEditingStatefulSet(statefulSet)
-    setEditStatefulSetData({
-      replicas: statefulSet.replicas || 1,
-      image: statefulSet.image || statefulSet.images?.[0] || '',
-      labels: statefulSet.labels || {},
-      annotations: {}
-    })
-    setShowEditStatefulSetModal(true)
-  }
-
-  const handleEditStatefulSetAnnotations = async (statefulSet) => {
-    try {
-      setLoading(true)
-      const detailResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}`)
-      if (detailResponse.data && detailResponse.data.data) {
-        setEditingStatefulSet(statefulSet)
-        setEditStatefulSetData({
-          replicas: detailResponse.data.data.replicas || 1,
-          image: detailResponse.data.data.image || detailResponse.data.data.images?.[0] || '',
-          labels: {},
-          annotations: detailResponse.data.data.annotations || {}
-        })
-        setShowEditStatefulSetModal(true)
-      }
-    } catch (err) {
-      console.error('获取StatefulSet详情失败:', err)
-      setError(err.response?.data?.message || err.message || t('k8s.fetchDetailFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleViewStatefulSetLogs = async (statefulSet) => {
-    await handleStatefulSetClick(statefulSet)
-    setStatefulSetDetailTab('logs')
-  }
-
-  const handleDeleteStatefulSet = async (statefulSet) => {
-    if (!window.confirm(t('k8s.confirmDeleteStatefulSet'))) {
-      return
-    }
-    try {
-      setLoading(true)
-      await api.delete(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}`)
-      if (selectedWorkloadNamespace) {
-        fetchStatefulSets(selectedWorkloadNamespace)
-      } else {
-        fetchStatefulSets()
-      }
-    } catch (err) {
-      console.error('删除StatefulSet失败:', err)
-      setError(err.response?.data?.message || err.message || t('k8s.deleteStatefulSetFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleScaleStatefulSet = async (statefulSet) => {
-    setScalingStatefulSet(statefulSet)
-    setScaleStatefulSetReplicas(statefulSet.replicas || 1)
-    setShowScaleStatefulSetModal(true)
-  }
-
   // 处理Deployment YAML编辑
   const handleEditDeploymentYaml = async (deployment) => {
     try {
@@ -2231,7 +2380,7 @@ const K8sClusterDetail = () => {
       // 刷新列表
       if (selectedWorkloadNamespace) {
         fetchDeployments(selectedWorkloadNamespace)
-      } else {
+        } else {
         fetchDeployments()
       }
     } catch (err) {
@@ -2273,6 +2422,222 @@ const K8sClusterDetail = () => {
     } catch (err) {
       console.error('伸缩Deployment失败:', err)
       setError(err.response?.data?.message || err.message || t('k8s.scaleFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // StatefulSet 相关处理函数
+  // 处理返回StatefulSet列表
+  const handleBackFromStatefulSetDetail = () => {
+    const newParams = new URLSearchParams()
+    newParams.set('tab', 'workloads')
+    newParams.set('type', 'statefulsets')
+    if (selectedWorkloadNamespace) {
+      newParams.set('namespace', selectedWorkloadNamespace)
+    }
+    navigate(`/k8s/cluster/${id}?${newParams.toString()}`, { replace: true })
+    setSelectedStatefulSet(null)
+    setStatefulSetDetail(null)
+    setStatefulSetPods([])
+    setStatefulSetDetailTab('pods')
+    loadedStatefulSetRef.current = null
+  }
+
+  // 处理StatefulSet YAML编辑
+  const handleEditStatefulSetYaml = async (statefulSet) => {
+    try {
+      setLoading(true)
+      const response = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/yaml`)
+      if (response.data && response.data.data) {
+        setStatefulSetYaml(response.data.data.yaml || response.data.data)
+      } else {
+        setStatefulSetYaml(response.data.yaml || '')
+      }
+      setEditingStatefulSetYaml(statefulSet)
+      setShowStatefulSetYamlEditModal(true)
+    } catch (err) {
+      console.error('获取StatefulSet YAML失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.fetchYamlFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 处理重新部署StatefulSet
+  const handleRedeployStatefulSet = async (statefulSet) => {
+    if (!window.confirm(t('k8s.confirmRedeploy'))) {
+      return
+    }
+    try {
+      setLoading(true)
+      await api.post(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/redeploy`)
+      // 刷新列表
+      if (selectedWorkloadNamespace) {
+        fetchStatefulSets(selectedWorkloadNamespace)
+      } else {
+        fetchStatefulSets()
+      }
+    } catch (err) {
+      console.error('重新部署StatefulSet失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.redeployFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 处理编辑StatefulSet标签
+  const handleEditStatefulSetLabels = (statefulSet) => {
+    setEditingStatefulSet(statefulSet)
+    setEditStatefulSetData({
+      replicas: statefulSet.replicas || 1,
+      image: statefulSet.image || statefulSet.images?.[0] || '',
+      labels: statefulSet.labels || {},
+      annotations: {}
+    })
+    setShowEditStatefulSetModal(true)
+  }
+
+  // 处理编辑StatefulSet注解
+  const handleEditStatefulSetAnnotations = async (statefulSet) => {
+    try {
+      setLoading(true)
+      const detailResponse = await api.get(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}`)
+      if (detailResponse.data && detailResponse.data.data) {
+        setEditingStatefulSet(statefulSet)
+        setEditStatefulSetData({
+          replicas: detailResponse.data.data.replicas || 1,
+          image: detailResponse.data.data.image || detailResponse.data.data.images?.[0] || '',
+          labels: {},
+          annotations: detailResponse.data.data.annotations || {}
+        })
+        setShowEditStatefulSetModal(true)
+      }
+    } catch (err) {
+      console.error('获取StatefulSet详情失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.fetchDetailFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 处理查看StatefulSet日志
+  const handleViewStatefulSetLogs = async (statefulSet) => {
+    await handleStatefulSetClick(statefulSet)
+    setStatefulSetDetailTab('logs')
+  }
+
+  // 处理删除StatefulSet
+  const handleDeleteStatefulSet = async (statefulSet) => {
+    if (!window.confirm(t('k8s.confirmDeleteStatefulSet'))) {
+      return
+    }
+    try {
+      setLoading(true)
+      await api.delete(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}`)
+      // 如果删除的是当前查看的StatefulSet，返回列表
+      if (selectedStatefulSet && selectedStatefulSet.name === statefulSet.name && selectedStatefulSet.namespace === statefulSet.namespace) {
+        handleBackFromStatefulSetDetail()
+      }
+      // 刷新列表
+      if (selectedWorkloadNamespace) {
+        fetchStatefulSets(selectedWorkloadNamespace)
+      } else {
+        fetchStatefulSets()
+      }
+    } catch (err) {
+      console.error('删除StatefulSet失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.deleteStatefulSetFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 处理伸缩StatefulSet
+  const handleScaleStatefulSet = async (statefulSet) => {
+    const currentReplicas = statefulSet.replicas || statefulSetDetail?.replicas || 1
+    const newReplicas = prompt(t('k8s.scaleStatefulSet'), currentReplicas)
+    if (newReplicas === null) return
+    
+    const replicas = parseInt(newReplicas)
+    if (isNaN(replicas) || replicas < 0) {
+      setError(t('k8s.invalidReplicas'))
+      return
+    }
+    
+    try {
+      setLoading(true)
+      await api.put(`/k8s/clusters/${id}/namespaces/${statefulSet.namespace}/statefulsets/${statefulSet.name}/scale`, {
+        replicas: replicas
+      })
+      // 刷新详情
+      if (selectedStatefulSet && selectedStatefulSet.name === statefulSet.name) {
+        await loadStatefulSetDetail(selectedStatefulSet)
+      }
+      // 刷新列表
+      if (selectedWorkloadNamespace) {
+        fetchStatefulSets(selectedWorkloadNamespace)
+      } else {
+        fetchStatefulSets()
+      }
+      setSuccess(t('k8s.scaleSuccess'))
+    } catch (err) {
+      console.error('伸缩StatefulSet失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.scaleFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 批量删除StatefulSet
+  const handleBatchDeleteStatefulSets = async () => {
+    if (selectedStatefulSets.length === 0) return
+    if (!window.confirm(t('k8s.confirmBatchDeleteStatefulSets'))) {
+      return
+    }
+    try {
+      setLoading(true)
+      for (const key of selectedStatefulSets) {
+        const [namespace, name] = key.split('/')
+        await api.delete(`/k8s/clusters/${id}/namespaces/${namespace}/statefulsets/${name}`)
+      }
+      setSelectedStatefulSets([])
+      if (selectedWorkloadNamespace) {
+        fetchStatefulSets(selectedWorkloadNamespace)
+      } else {
+        fetchStatefulSets()
+      }
+      setSuccess(t('k8s.batchDeleteSuccess'))
+    } catch (err) {
+      console.error('批量删除StatefulSet失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.batchDeleteFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 批量重新部署StatefulSet
+  const handleBatchRedeployStatefulSets = async () => {
+    if (selectedStatefulSets.length === 0) return
+    if (!window.confirm(t('k8s.confirmBatchRedeployStatefulSets'))) {
+      return
+    }
+    try {
+      setLoading(true)
+      for (const key of selectedStatefulSets) {
+        const [namespace, name] = key.split('/')
+        await api.post(`/k8s/clusters/${id}/namespaces/${namespace}/statefulsets/${name}/redeploy`)
+      }
+      setSelectedStatefulSets([])
+      if (selectedWorkloadNamespace) {
+        fetchStatefulSets(selectedWorkloadNamespace)
+      } else {
+        fetchStatefulSets()
+      }
+      setSuccess(t('k8s.batchRedeploySuccess'))
+    } catch (err) {
+      console.error('批量重新部署StatefulSet失败:', err)
+      setError(err.response?.data?.message || err.message || t('k8s.batchRedeployFailed'))
     } finally {
       setLoading(false)
     }
@@ -3582,6 +3947,36 @@ const K8sClusterDetail = () => {
                             </table>
                           </div>
 
+                          {selectedStatefulSets.length > 0 && (
+                            <div className="batch-actions">
+                              <input
+                                type="checkbox"
+                                checked={selectedStatefulSets.length === statefulSets.length && statefulSets.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStatefulSets(statefulSets.map(s => `${s.namespace}/${s.name}`))
+                                  } else {
+                                    setSelectedStatefulSets([])
+                                  }
+                                }}
+                              />
+                              <button 
+                                className="btn-secondary" 
+                                onClick={handleBatchDeleteStatefulSets}
+                                disabled={selectedStatefulSets.length === 0}
+                              >
+                                批量删除({selectedStatefulSets.length})
+                              </button>
+                              <button 
+                                className="btn-secondary" 
+                                onClick={handleBatchRedeployStatefulSets}
+                                disabled={selectedStatefulSets.length === 0}
+                              >
+                                批量重新部署({selectedStatefulSets.length})
+                              </button>
+                                          </div>
+                          )}
+
                           {!loading && statefulSets.length > 0 && (
                         <Pagination
                           currentPage={workloadsPage}
@@ -3600,6 +3995,281 @@ const K8sClusterDetail = () => {
                         />
                                             )}
                                           </div>
+                                    )}
+
+                      {/* 容器组 Pod 列表 */}
+                      {workloadType === 'pods' && !searchParams.get('view') && (
+                        <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>容器组 <span className="deployment-subtitle">Pod</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedWorkloadNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedWorkloadNamespace(newNamespace)
+                                    setWorkloadsPage(1)
+                                    // 立即根据命名空间获取 Pod 数据，重置页码为 1
+                                    fetchWorkloads(newNamespace || '', 1)
+                                  }}
+                                >
+                                  <option value="">{t('k8s.allNamespaces')}</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">{t('k8s.name')}</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder={t('k8s.searchPlaceholder')}
+                                    value={workloadSearchTerm}
+                                    onChange={(e) => setWorkloadSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchWorkloads(selectedWorkloadNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchWorkloads(selectedWorkloadNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="icon-btn" disabled title="设置">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.56 3.76 2.2 2.2 0 0 1-1.56-.64l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V22a2.2 2.2 0 0 1-4.4 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 1 1-3.12-3.12l.04-.04A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H2a2.2 2.2 0 0 1 0-4.4h-.06A1.8 1.8 0 0 0 3.6 8.4a1.8 1.8 0 0 0 .36-1.98l-.04-.04A2.2 2.2 0 1 1 7.04 3.2l.04.04A1.8 1.8 0 0 0 9.06 3.6a1.8 1.8 0 0 0 1.1-1.66V2a2.2 2.2 0 0 1 4.4 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 1 1 3.12 3.12l-.04.04A1.8 1.8 0 0 0 20.4 8.4a1.8 1.8 0 0 0 1.66 1.1H22a2.2 2.2 0 0 1 0 4.4h-.06a1.8 1.8 0 0 0-1.66 1.1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchWorkloads(selectedWorkloadNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>{t('k8s.labels')}</th>
+                                  <th>{t('k8s.status')}</th>
+                                  <th>{t('k8s.restartCount')}</th>
+                                  <th>Pod IP</th>
+                                  <th>{t('k8s.node')}</th>
+                                  <th>{t('k8s.createdAt')}</th>
+                                  <th>CPU (核) / 内存 (字节)</th>
+                                  <th>{t('common.actions')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {workloads
+                                  .filter((pod) => {
+                                    if (!workloadSearchTerm) return true
+                                    return (pod.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                  })
+                                  .map((pod) => {
+                                    const key = `${pod.namespace}/${pod.name}`
+                                    // 提取容器镜像信息用于显示在名称下方
+                                    const containerImages = pod.containers || []
+                                    const imageInfo = containerImages.length > 0 
+                                      ? containerImages.map(c => {
+                                          const imageName = c.image || ''
+                                          const parts = imageName.split(':')
+                                          if (parts.length > 1) {
+                                            return `${parts[0].split('/').pop()}:${parts[1]}`
+                                          }
+                                          return imageName.split('/').pop()
+                                        }).join(', ')
+                                      : (pod.image || (Array.isArray(pod.images) && pod.images.length ? pod.images[0] : ''))
+                                    
+                                    // 格式化 CPU 和内存
+                                    const cpuUsage = pod.cpu || pod.cpuUsage || '0'
+                                    const memoryUsage = pod.memory || pod.memoryUsage || '0'
+                                    const memoryInMi = typeof memoryUsage === 'string' && memoryUsage.includes('Mi') 
+                                      ? memoryUsage 
+                                      : (typeof memoryUsage === 'number' ? `${(memoryUsage / 1024 / 1024).toFixed(3)} Mi` : memoryUsage)
+                                    
+                                    return (
+                                      <tr key={key}>
+                                        <td className="name-cell">
+                                          <div>
+                                            <div>{pod.name}</div>
+                                            {imageInfo && (
+                                              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                                                {imageInfo}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td>{pod.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {pod.labels && Object.keys(pod.labels).length > 0 ? (
+                                            <div className="labels-container">
+                                              {Object.entries(pod.labels).slice(0, 3).map(([key, value]) => (
+                                                <span key={key} className="label-tag">
+                                                  {key}:{value}
+                                                </span>
+                                              ))}
+                                              {Object.keys(pod.labels).length > 3 && (
+                                                <span className="label-more">+{Object.keys(pod.labels).length - 3}</span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            '-'
+                                          )}
+                                        </td>
+                                        <td>
+                                          <span className={`status-badge ${getPodStatusClass(pod.status)}`}>
+                                            {pod.status === 'Running' && '● '}
+                                            {pod.status || 'Unknown'}
+                                          </span>
+                                        </td>
+                                        <td>{pod.restartCount || pod.restart_count || 0}</td>
+                                        <td>{pod.ip || pod.podIP || '-'}</td>
+                                        <td>
+                                          {pod.nodeName ? (
+                                            <>
+                                              {pod.nodeName}
+                                              {pod.nodeIP && (
+                                                <>
+                                                  <br />
+                                                  <span className="node-ip">{pod.nodeIP}</span>
+                                                </>
+                                              )}
+                                            </>
+                                          ) : '-'}
+                                        </td>
+                                        <td>{pod.created_at || pod.createdAt ? new Date(pod.created_at || pod.createdAt).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>
+                                          {cpuUsage} / {memoryInMi}
+                                        </td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => handleViewPodDetails(pod)}>
+                                              详情
+                                            </button>
+                                            <span className="action-separator">|</span>
+                                            <button className="btn-text" onClick={() => handleEditYaml(pod)}>
+                                              YAML {t('common.edit')}
+                                            </button>
+                                            <span className="action-separator">|</span>
+                                            <button className="btn-text" onClick={() => handleViewLogs(pod)}>
+                                              {t('k8s.terminal')}
+                                            </button>
+                                            <span className="action-separator">|</span>
+                                            <div className="action-dropdown">
+                                            <button 
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                  dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                {t('common.more')} ▼
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                  handleRestartPod(pod.namespace, pod.name)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.restart')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  handleEditLabels(pod)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  handleEditAnnotations(pod)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editAnnotations')}
+                                            </button>
+                                            <button 
+                                                  className="danger"
+                                              onClick={() => {
+                                                    handleDeletePod(pod)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}
+                                                >
+                                                  {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {workloads.length === 0 && (
+                                  <tr>
+                                    <td colSpan="10" className="empty-state">{t('k8s.noPods')}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && workloads.length > 0 && (
+                            <Pagination
+                              currentPage={workloadsPage}
+                              totalPages={Math.ceil(workloadsTotal / workloadsPageSize)}
+                              totalItems={workloadsTotal}
+                              pageSize={workloadsPageSize}
+                              onPageChange={(page) => {
+                                setWorkloadsPage(page)
+                                fetchWorkloads(selectedWorkloadNamespace || '', page)
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setWorkloadsPageSize(newSize)
+                                setWorkloadsPage(1)
+                                fetchWorkloads(selectedWorkloadNamespace || '', 1)
+                              }}
+                            />
+                          )}
+                        </div>
                       )}
 
                       {/* Deployment 详情视图 */}
@@ -3764,7 +4434,7 @@ const K8sClusterDetail = () => {
                                   <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                 </svg>
                             </button>
-                          </div>
+                                          </div>
                           </div>
 
                           {/* 主要内容区域 */}
@@ -3812,13 +4482,13 @@ const K8sClusterDetail = () => {
                                         <button className="expand-details-btn-inline">
                                           展开现状详情 ▼
                   </button>
-                </div>
+                          </div>
               </div>
             </div>
 
                                   {/* 右列 */}
                                   <div className="info-column-right">
-                                      <div className="info-item">
+                                <div className="info-item">
                                       <label>{t('k8s.createdAt')}</label>
                                       <span>{deploymentDetail.created_at ? new Date(deploymentDetail.created_at).toLocaleString('zh-CN') : '-'}</span>
                         </div>
@@ -3827,7 +4497,7 @@ const K8sClusterDetail = () => {
                                       <span>{deploymentDetail.strategy || 'RollingUpdate'}</span>
                         </div>
                                     {(deploymentDetail.strategy === 'RollingUpdate' || !deploymentDetail.strategy) && (
-                                      <div className="info-item">
+                                <div className="info-item">
                                         <label>{t('k8s.rollingUpdateStrategy')}</label>
                                         <div className="strategy-details">
                                           <div>超过期望的Pod数量: {deploymentDetail.maxSurge || deploymentDetail.max_surge || '25%'}</div>
@@ -3836,17 +4506,17 @@ const K8sClusterDetail = () => {
                         </div>
                                     )}
                                     {deploymentDetail.labels && Object.keys(deploymentDetail.labels).length > 0 && (
-                                      <div className="info-item">
+                                <div className="info-item">
                                         <label>{t('k8s.labels')}</label>
                                         <div className="labels-list">
                                           {Object.entries(deploymentDetail.labels).map(([key, value]) => (
                                             <span key={key} className="label-tag">{key}:{value}</span>
                                           ))}
                                           <button className="show-all-btn">显示全部</button>
-                      </div>
+                          </div>
                       </div>
                       )}
-                    </div>
+                          </div>
                       </div>
                     </div>
                             ) : selectedDeployment ? (
@@ -3857,7 +4527,7 @@ const K8sClusterDetail = () => {
                                       <div className="info-item">
                                       <label>{t('k8s.name')}</label>
                                       <span>{selectedDeployment.name || '-'}</span>
-                                      </div>
+                          </div>
                                         <div className="info-item">
                                       <label>{t('k8s.namespace')}</label>
                                       <span>{selectedDeployment.namespace || '-'}</span>
@@ -3868,14 +4538,14 @@ const K8sClusterDetail = () => {
                                       </div>
                                   </div>
                             ) : null}
-                              </div>
-                              
+                          </div>
+
                           {/* 标签页 */}
                           <div className="deployment-detail-tabs">
                   <button
                               className={`tab-button ${deploymentDetailTab === 'pods' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('pods')}
-                                            >
+                            >
                               {t('k8s.containerGroup')}
                   </button>
                   <button
@@ -3899,7 +4569,7 @@ const K8sClusterDetail = () => {
                         <button
                               className={`tab-button ${deploymentDetailTab === 'history' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('history')}
-                                            >
+                            >
                               {t('k8s.historyVersions')}
                         </button>
                         <button
@@ -3907,14 +4577,14 @@ const K8sClusterDetail = () => {
                               onClick={() => setDeploymentDetailTab('logs')}
                             >
                               {t('k8s.logs')}
-                                            </button>
-                                            <button 
+                            </button>
+                            <button
                               className={`tab-button ${deploymentDetailTab === 'monitoring' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('monitoring')}
                             >
                               {t('k8s.monitoring')}
-                                            </button>
-                                              <button 
+                            </button>
+                            <button
                               className={`tab-button ${deploymentDetailTab === 'cost' ? 'active' : ''}`}
                               onClick={() => setDeploymentDetailTab('cost')}
                             >
@@ -3932,34 +4602,34 @@ const K8sClusterDetail = () => {
                           <div className="deployment-detail-tab-content">
                             {deploymentDetailTab === 'pods' && (
                               <div className="pods-tab-content">
-                      <div className="table-wrapper">
-                        <table className="data-table">
-                          <thead>
-                            <tr>
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
                                     <th>{t('k8s.name')}</th>
-                                        <th>{t('k8s.image')}</th>
+                                      <th>{t('k8s.image')}</th>
                                         <th>{t('k8s.status')} (全部) ▼</th>
-                                        <th>{t('k8s.monitoring')}</th>
+                                      <th>{t('k8s.monitoring')}</th>
                                         <th>{t('k8s.restartCount')} ▲</th>
                                         <th>Pod IP</th>
                                   <th>{t('k8s.node')}</th>
-                              <th>{t('k8s.createdAt')}</th>
+                                    <th>{t('k8s.createdAt')}</th>
                                     <th>{t('common.actions')}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                                </tr>
+                              </thead>
+                              <tbody>
                                       {deploymentPods && deploymentPods.length > 0 ? (
                                         deploymentPods.map((pod) => (
-                                          <tr key={pod.name}>
+                                        <tr key={pod.name}>
                                             <td className="name-cell">{pod.name}</td>
                                             <td className="images-cell">{pod.image || (Array.isArray(pod.images) && pod.images.length ? pod.images[0] : '-')}</td>
-                                            <td>
+                                          <td>
                                               <span className={`status-badge status-${(pod.status || '').toLowerCase()}`}>
                                                 {pod.status === 'Running' && '● '}
                                                 {pod.status || 'Unknown'}
                                     </span>
                                   </td>
-                                            <td>
+                                          <td>
                                               <button className="icon-btn" title={t('k8s.monitoring')}>
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                                   <path d="M3 3v18h18" stroke="currentColor" strokeWidth="2"/>
@@ -3976,39 +4646,39 @@ const K8sClusterDetail = () => {
                                                   <br />
                                                   <span className="node-ip">{pod.nodeIP || ''}</span>
                                                 </>
-                                              ) : '-'}
-                                      </td>
-                                            <td>{pod.created_at ? new Date(pod.created_at).toLocaleString('zh-CN') : '-'}</td>
+                                            ) : '-'}
+                                          </td>
+                                          <td>{pod.created_at ? new Date(pod.created_at).toLocaleString('zh-CN') : '-'}</td>
                                           <td>
                                             <div className="action-buttons">
                                                 <button className="btn-text" onClick={() => handleViewPodDetails(pod)}>
                                                   详情
-                                                </button>
+                                            </button>
                                                 <span className="action-separator">|</span>
                                                 <button className="btn-text" onClick={() => handleEditYaml(pod)}>
                                                 YAML {t('common.edit')}
-                  </button>
+                                            </button>
                                                 <span className="action-separator">|</span>
                                                 <button className="btn-text" onClick={() => handleViewLogs(pod)}>
                                                   {t('k8s.terminal')}
-                                                </button>
+                                            </button>
                                                 <span className="action-separator">|</span>
-                                              <div className="action-dropdown">
+                                            <div className="action-dropdown">
                                                   <button className="btn-text btn-more">
                                                   {t('common.more')} ▼
-                    </button>
+                                              </button>
                                                   <div className="dropdown-menu">
                                                     <button onClick={() => handleRestartPod(pod)}>
                                                     {t('k8s.restart')}
-                                                  </button>
+                                                </button>
                                                     <button className="danger" onClick={() => handleDeletePod(pod)}>
                                                     {t('common.delete')}
-                  </button>
-                </div>
-              </div>
-            </div>
-                                </td>
-                                </tr>
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                    </td>
+                                  </tr>
                               ))
                                       ) : (
                                         <tr>
@@ -4021,19 +4691,435 @@ const K8sClusterDetail = () => {
                                 {deploymentPods && deploymentPods.length > 0 && (
                                   <div className="pagination-info">
                                     共有{deploymentPods.length}条,每页显示:25条
+                                            </div>
+                                          )}
+                                        </div>
+                  )}
+
+                            {deploymentDetailTab !== 'pods' && (
+                              <div className="tab-placeholder">
+                                {t('k8s.comingSoon')}
+                                              </div>
+                        )}
+                                              </div>
+                                            </div>
+                                            )}
+
+                      {/* StatefulSet 详情视图 */}
+                      {((selectedStatefulSet && statefulSetDetail) || (searchParams.get('view') === 'detail' && searchParams.get('statefulset') && selectedStatefulSet)) && (
+                        <div className="deployment-detail-view">
+                          {/* 头部 */}
+                          <div className="deployment-detail-header">
+                            <div className="deployment-detail-header-left">
+                  <button
+                                className="back-button"
+                                onClick={handleBackFromStatefulSetDetail}
+                                title={t('common.back')}
+                              >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                  <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                                            </button>
+                              <h1 className="deployment-detail-title">{statefulSetDetail?.name || selectedStatefulSet?.name || '-'}</h1>
+                            </div>
+                            <div className="deployment-detail-header-right">
+                              <button className="btn-primary" onClick={() => handleEditStatefulSetLabels(selectedStatefulSet)}>
+                                              {t('common.edit')}
+                                            </button>
+                              <button className="btn-primary" onClick={() => handleScaleStatefulSet(selectedStatefulSet)}>
+                                              {t('k8s.scale')}
+                                            </button>
+                              <button className="btn-primary" onClick={() => handleEditStatefulSetYaml(selectedStatefulSet)}>
+                                                YAML {t('common.edit')}
+                  </button>
+                                              <div className="action-dropdown">
+                                                <button 
+                                  className="btn-primary"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                      if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                        menu.classList.remove('show')
+                                                      }
+                                                    })
+                                    const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                      dropdown.classList.toggle('show')
+                                                  }}
+                                                >
+                                                  {t('common.more')} ▼
+                    </button>
+                                                <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                  <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 监控功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.monitoring')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 智能优化功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.intelligentOptimization')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditStatefulSetYaml(selectedStatefulSet)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}>
+                                                  {t('k8s.yamlEdit')}
+                    </button>
+                                                  <button onClick={() => {
+                                    handleRedeployStatefulSet(selectedStatefulSet)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}>
+                                                  {t('k8s.redeploy')}
+                  </button>
+                                                  <button onClick={() => {
+                                    handleEditStatefulSetLabels(selectedStatefulSet)
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                  }}>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                    handleEditStatefulSetAnnotations(selectedStatefulSet)
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.editAnnotations')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 节点亲和性功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.nodeAffinity')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 弹性伸缩功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.elasticScaling')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 调度容忍功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.schedulingToleration')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 资源画像功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.resourceProfile')}
+                                                </button>
+                                                <button onClick={() => {
+                                    setStatefulSetDetailTab('cost')
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                    {t('k8s.costInsight')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 升级策略功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.upgradeStrategy')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 复制创建功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.cloneCreate')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    // 回滚功能暂不开放
+                                  }} disabled>
+                                                  {t('k8s.rollback')}
+                                                </button>
+                                                <button onClick={() => {
+                                    setStatefulSetDetailTab('logs')
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }}>
+                                                  {t('k8s.logs')}
+                                                  </button>
+                  <button
+                                                    className="danger"
+                    onClick={() => {
+                                      handleDeleteStatefulSet(selectedStatefulSet)
+                                                      document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                    }}
+                                                  >
+                                                    {t('common.delete')}
+                  </button>
+                </div>
+              </div>
+                            <button
+                                className="icon-btn"
+                                onClick={async () => {
+                                  if (selectedStatefulSet) {
+                                    // 重置加载状态，强制刷新
+                                    isLoadingStatefulSetRef.current = false
+                                    loadedStatefulSetRef.current = ''
+                                    await loadStatefulSetDetail(selectedStatefulSet)
+                                  }
+                                }}
+                                title={t('common.refresh')}
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </button>
+                      </div>
+                          </div>
+
+                          {/* 主要内容区域 */}
+                          <div className="deployment-detail-content">
+                            {/* 基本信息 - 两列布局 */}
+                            {statefulSetDetail ? (
+                          <div className="info-section">
+                                <h3>{t('k8s.basicInfo')}</h3>
+                                <div className="info-grid-two-columns">
+                                  {/* 左列 */}
+                                  <div className="info-column-left">
+                                <div className="info-item">
+                                      <label>{t('k8s.name')}</label>
+                                      <span>{statefulSetDetail.name || selectedStatefulSet?.name || '-'}</span>
+                        </div>
+                                <div className="info-item">
+                                      <label>{t('k8s.createdAt')}</label>
+                                      <span>{statefulSetDetail.created_at ? new Date(statefulSetDetail.created_at).toLocaleString('zh-CN') : '-'}</span>
+                        </div>
+                                <div className="info-item">
+                                      <label>{t('k8s.annotations')}</label>
+                                      <span>{statefulSetDetail.annotations && Object.keys(statefulSetDetail.annotations).length > 0 ? Object.entries(statefulSetDetail.annotations).map(([key, value]) => `${key}:${value}`).join(', ') : '-'}</span>
+                    </div>
+                                      <div className="info-item">
+                                      <label>{t('k8s.strategy')}</label>
+                                      <span>{statefulSetDetail.strategy || 'RollingUpdate'}</span>
+                        </div>
+                                  </div>
+
+                                  {/* 右列 */}
+                                  <div className="info-column-right">
+                                <div className="info-item">
+                                      <label>{t('k8s.namespace')}</label>
+                                      <span>{statefulSetDetail.namespace || selectedStatefulSet?.namespace || '-'}</span>
+                        </div>
+                                    {statefulSetDetail.labels && Object.keys(statefulSetDetail.labels).length > 0 && (
+                                <div className="info-item">
+                                        <label>{t('k8s.labels')}</label>
+                                        <div className="labels-list">
+                                          {Object.entries(statefulSetDetail.labels).map(([key, value]) => (
+                                            <span key={key} className="label-tag">{key}:{value}</span>
+                                          ))}
+                      </div>
+                      </div>
+                      )}
+                                <div className="info-item">
+                                      <label>{t('k8s.selector')}</label>
+                                      <div className="selector-tags">
+                                        {statefulSetDetail.selector && Object.entries(statefulSetDetail.selector).map(([key, value]) => (
+                                          <span key={key} className="selector-tag">{key}:{value}</span>
+                                        ))}
+                                        {(!statefulSetDetail.selector || Object.keys(statefulSetDetail.selector).length === 0) && '-'}
+                    </div>
+                                              </div>
+                                      <div className="info-item">
+                                      <label>{t('k8s.status')}</label>
+                                      <div className="status-inline">
+                            <span>
+                                          {t('k8s.ready')}:{statefulSetDetail.readyReplicas || statefulSetDetail.ready_replicas || 0}/{statefulSetDetail.replicas || 0}个, {t('k8s.updated')}:{statefulSetDetail.updatedReplicas || statefulSetDetail.updated_replicas || 0}个, {t('k8s.available')}:{statefulSetDetail.availableReplicas || statefulSetDetail.available_replicas || 0}个
+                                    </span>
+                      </div>
+                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : selectedStatefulSet ? (
+                              <div className="info-section">
+                                <h3>{t('k8s.basicInfo')}</h3>
+                                <div className="info-grid-two-columns">
+                                  <div className="info-column-left">
+                                      <div className="info-item">
+                                      <label>{t('k8s.name')}</label>
+                                      <span>{selectedStatefulSet.name || '-'}</span>
+                          </div>
+                                        </div>
+                                  <div className="info-column-right">
+                                        <div className="info-item">
+                                      <label>{t('k8s.namespace')}</label>
+                                      <span>{selectedStatefulSet.namespace || '-'}</span>
+                                        </div>
+                                        </div>
+                                      </div>
+                                  </div>
+                            ) : null}
+                          </div>
+
+                          {/* 标签页 */}
+                          <div className="deployment-detail-tabs">
+                  <button
+                              className={`tab-button ${statefulSetDetailTab === 'pods' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('pods')}
+                            >
+                              {t('k8s.containerGroup')}
+                  </button>
+                  <button
+                              className={`tab-button ${statefulSetDetailTab === 'access' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('access')}
+                            >
+                              {t('k8s.accessMethod')}
+                        </button>
+                        <button
+                              className={`tab-button ${statefulSetDetailTab === 'events' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('events')}
+                            >
+                              {t('k8s.events')}
+                        </button>
+                        <button
+                              className={`tab-button ${statefulSetDetailTab === 'scaling' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('scaling')}
+                            >
+                              {t('k8s.containerScaling')}
+                        </button>
+                        <button
+                              className={`tab-button ${statefulSetDetailTab === 'history' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('history')}
+                            >
+                              {t('k8s.historyVersions')}
+                        </button>
+                        <button
+                              className={`tab-button ${statefulSetDetailTab === 'logs' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('logs')}
+                            >
+                              {t('k8s.logs')}
+                            </button>
+                            <button
+                              className={`tab-button ${statefulSetDetailTab === 'monitoring' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('monitoring')}
+                            >
+                              {t('k8s.monitoring')}
+                            </button>
+                            <button
+                              className={`tab-button ${statefulSetDetailTab === 'cost' ? 'active' : ''}`}
+                              onClick={() => setStatefulSetDetailTab('cost')}
+                            >
+                              {t('k8s.costInsight')}
+                        </button>
+                      </div>
+
+                          {/* 标签页内容 */}
+                          <div className="deployment-detail-tab-content">
+                            {statefulSetDetailTab === 'pods' && (
+                              <div className="pods-tab-content">
+                      <div className="table-wrapper">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                                    <th>{t('k8s.name')}</th>
+                                      <th>{t('k8s.image')}</th>
+                                        <th>{t('k8s.status')} (全部) ▼</th>
+                                      <th>{t('k8s.monitoring')}</th>
+                                        <th>{t('k8s.restartCount')} ▲</th>
+                                        <th>Pod IP</th>
+                                  <th>{t('k8s.node')}</th>
+                              <th>{t('k8s.createdAt')}</th>
+                                    <th>{t('common.actions')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                                      {statefulSetPods && statefulSetPods.length > 0 ? (
+                                        statefulSetPods.map((pod) => (
+                                        <tr key={pod.name}>
+                                            <td className="name-cell">{pod.name}</td>
+                                            <td className="images-cell">
+                                              {Array.isArray(pod.images) && pod.images.length > 0 ? (
+                                                <div>
+                                                  {pod.images.map((img, idx) => (
+                                                    <div key={idx}>{img}</div>
+                                                  ))}
+                                                </div>
+                                              ) : (pod.image || '-')}
+                                </td>
+                                          <td>
+                                              <span className={`status-badge status-${(pod.status || '').toLowerCase()}`}>
+                                                {pod.status === 'Running' && '● '}
+                                                {pod.status || 'Unknown'}
+                                    </span>
+                                  </td>
+                                          <td>
+                                              <button className="icon-btn" title={t('k8s.monitoring')}>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                                  <path d="M3 3v18h18" stroke="currentColor" strokeWidth="2"/>
+                                                  <path d="M7 12l4-4 4 4 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                                </svg>
+                                              </button>
+                                          </td>
+                                            <td>{pod.restartCount || 0}</td>
+                                            <td>{pod.ip || '-'}</td>
+                                            <td>
+                                              {pod.nodeName ? (
+                                                <>
+                                                  {pod.nodeName}
+                                                  <br />
+                                                  <span className="node-ip">{pod.nodeIP || ''}</span>
+                                                </>
+                                            ) : '-'}
+                                          </td>
+                                          <td>{pod.created_at ? new Date(pod.created_at).toLocaleString('zh-CN') : '-'}</td>
+                                          <td>
+                                            <div className="action-buttons">
+                                                <button className="btn-text" onClick={() => handleViewPodDetails(pod)}>
+                                                  详情
+                                            </button>
+                                                <span className="action-separator">|</span>
+                                                <button className="btn-text" onClick={() => handleEditYaml(pod)}>
+                                                YAML {t('common.edit')}
+                                            </button>
+                                                <span className="action-separator">|</span>
+                                                <button className="btn-text" onClick={() => handleViewLogs(pod)}>
+                                                  {t('k8s.terminal')}
+                                            </button>
+                                                <span className="action-separator">|</span>
+                                            <div className="action-dropdown">
+                                                  <button className="btn-text btn-more">
+                                                  {t('common.more')} ▼
+                                              </button>
+                                                  <div className="dropdown-menu">
+                                                    <button onClick={() => handleRestartPod(pod.namespace, pod.name)}>
+                                                    {t('k8s.restart')}
+                                                </button>
+                                                    <button className="danger" onClick={() => handleDeletePod(pod)}>
+                                                    {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                    </td>
+                                </tr>
+                              ))
+                                      ) : (
+                                        <tr>
+                                          <td colSpan="9" className="empty-state">{t('k8s.noPods')}</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                                {statefulSetPods && statefulSetPods.length > 0 && (
+                                  <div className="pagination-info">
+                                    共有{statefulSetPods.length}条,每页显示:25条
                     </div>
               )}
             </div>
                   )}
 
-                            {deploymentDetailTab !== 'pods' && (
+                            {statefulSetDetailTab !== 'pods' && (
                               <div className="tab-placeholder">
                                 {t('k8s.comingSoon')}
                 </div>
                         )}
                 </div>
                 </div>
-                        )}
+                                            )}
             </div>
           )}
 
@@ -5232,7 +6318,7 @@ const K8sClusterDetail = () => {
                         </label>
                   </div>
                 </div>
-                  )}
+          )}
 
                   {/* 步骤2: 容器配置 */}
                   {createDeploymentStep === 2 && (
@@ -5399,7 +6485,7 @@ const K8sClusterDetail = () => {
                                 {t('k8s.sharedGpu')}
                               </label>
                 </div>
-                          </div>
+              </div>
 
                   <div className="form-group">
                             <label>{t('k8s.resourceRequests')}</label>
@@ -5436,7 +6522,7 @@ const K8sClusterDetail = () => {
                                 }}
                     />
                   </div>
-                          </div>
+                  </div>
 
                   <div className="form-group">
                             <label>{t('k8s.containerStartup')}</label>
@@ -5466,7 +6552,7 @@ const K8sClusterDetail = () => {
                                 tty
                               </label>
                   </div>
-                          </div>
+              </div>
 
                   <div className="form-group">
                             <label>
@@ -5667,9 +6753,9 @@ const K8sClusterDetail = () => {
                         {Object.entries(createDeploymentData.podLabels).map(([key, value]) => (
                           <div key={key} className="label-item">
                     <input
-                              type="text"
-                              value={key}
-                              onChange={(e) => {
+                            type="text"
+                            value={key}
+                            onChange={(e) => {
                                 const newPodLabels = { ...createDeploymentData.podLabels }
                                 delete newPodLabels[key]
                                 newPodLabels[e.target.value] = value
@@ -5678,32 +6764,32 @@ const K8sClusterDetail = () => {
                               placeholder={t('k8s.name')}
                               className="label-input"
                             />
-                            <input
-                              type="text"
-                              value={value}
-                              onChange={(e) => {
+                          <input
+                            type="text"
+                            value={value}
+                            onChange={(e) => {
                                 setCreateDeploymentData({
                                   ...createDeploymentData,
                                   podLabels: { ...createDeploymentData.podLabels, [key]: e.target.value }
-                                })
-                              }}
-                              placeholder={t('k8s.value')}
+                              })
+                            }}
+                            placeholder={t('k8s.value')}
                               className="label-input"
-                            />
-                            <button
+                          />
+                          <button
                               className="btn-text btn-delete"
-                              onClick={() => {
+                            onClick={() => {
                                 const newPodLabels = { ...createDeploymentData.podLabels }
                                 delete newPodLabels[key]
                                 setCreateDeploymentData({ ...createDeploymentData, podLabels: newPodLabels })
                               }}
                             >
                               {t('common.delete')}
-                            </button>
+                          </button>
                   </div>
-                        ))}
+                      ))}
                 </div>
-                    </div>
+                  </div>
                   )}
 
                   {/* 步骤4: 创建完成 */}
@@ -5712,7 +6798,7 @@ const K8sClusterDetail = () => {
                       <div className="success-icon">✓</div>
                       <h3>{t('k8s.createDeploymentSuccess')}</h3>
                       <p>{t('k8s.deploymentCreatedMessage')}</p>
-                    </div>
+                </div>
                   )}
                 </div>
 
