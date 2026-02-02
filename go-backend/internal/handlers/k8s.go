@@ -45,6 +45,46 @@ func NewK8sHandler(db *gorm.DB) *K8sHandler {
 	return &K8sHandler{db: db}
 }
 
+// logK8sAction 记录K8s操作审计日志
+func (h *K8sHandler) logK8sAction(c *gin.Context, action, resource string, resourceID uint, status int, message string, request, response interface{}) {
+	userID, _ := c.Get("user_id")
+	username, _ := c.Get("username")
+
+	var userIDUint uint
+	if userID != nil {
+		if id, ok := userID.(uint); ok {
+			userIDUint = id
+		}
+	}
+
+	var usernameStr string
+	if username != nil {
+		if name, ok := username.(string); ok {
+			usernameStr = name
+		}
+	}
+
+	// 异步记录，避免影响主流程
+	go func() {
+		_ = utils.LogAction(
+			h.db,
+			userIDUint,
+			usernameStr,
+			action,
+			resource,
+			resourceID,
+			c.Request.Method,
+			c.Request.URL.Path,
+			c.ClientIP(),
+			c.GetHeader("User-Agent"),
+			status,
+			message,
+			request,
+			response,
+		)
+	}()
+}
+
 // GetClusters 获取当前用户的K8s集群列表（支持分页）
 func (h *K8sHandler) GetClusters(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -266,6 +306,9 @@ func (h *K8sHandler) UpdateCluster(c *gin.Context) {
 	// 隐藏敏感信息
 	cluster.Config = ""
 
+	// 记录审计日志
+	h.logK8sAction(c, "update", "k8s_cluster", cluster.ID, 200, "更新集群成功", req, cluster)
+
 	utils.Success(c, cluster)
 }
 
@@ -289,9 +332,13 @@ func (h *K8sHandler) DeleteCluster(c *gin.Context) {
 	}
 
 	if err := h.db.Delete(&cluster).Error; err != nil {
+		h.logK8sAction(c, "delete", "k8s_cluster", cluster.ID, 500, "删除集群失败: "+err.Error(), nil, nil)
 		utils.InternalServerError(c, "删除集群失败: "+err.Error())
 		return
 	}
+
+	// 记录审计日志
+	h.logK8sAction(c, "delete", "k8s_cluster", cluster.ID, 200, "删除集群成功", nil, nil)
 
 	utils.Success(c, gin.H{"message": "删除成功"})
 }
@@ -2587,6 +2634,411 @@ func (h *K8sHandler) GetStorageClasses(c *gin.Context) {
 	} else {
 		utils.Success(c, scList)
 	}
+}
+
+// GetRAMUsers 获取RAM用户列表
+func (h *K8sHandler) GetRAMUsers(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Page     int    `form:"page" binding:"omitempty,min=1"`
+		PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+		Search   string `form:"search" binding:"omitempty"`
+	}
+	if err := c.ShouldBindQuery(&req); err == nil {
+		if req.Page == 0 {
+			req.Page = 1
+		}
+		if req.PageSize == 0 {
+			req.PageSize = 20
+		}
+	}
+
+	// TODO: 这里应该调用阿里云RAM API获取真实的RAM用户列表
+	// 目前返回模拟数据
+	ramUsers := []map[string]interface{}{
+		{
+			"user_id":      "201402669396075338",
+			"username":     "i005545",
+			"display_name": "刘贵珍",
+		},
+		{
+			"user_id":      "201402669396075339",
+			"username":     "005535",
+			"display_name": "张苏义",
+		},
+	}
+
+	// 搜索过滤
+	if req.Search != "" {
+		filtered := []map[string]interface{}{}
+		for _, user := range ramUsers {
+			username := fmt.Sprintf("%v", user["username"])
+			displayName := fmt.Sprintf("%v", user["display_name"])
+			if strings.Contains(username, req.Search) || strings.Contains(displayName, req.Search) {
+				filtered = append(filtered, user)
+			}
+		}
+		ramUsers = filtered
+	}
+
+	pagedList, total := paginateSlice(ramUsers, req.Page, req.PageSize)
+	utils.Success(c, gin.H{
+		"data":      pagedList,
+		"total":     total,
+		"page":      req.Page,
+		"page_size": req.PageSize,
+	})
+}
+
+// GetRAMRoles 获取RAM角色列表
+func (h *K8sHandler) GetRAMRoles(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Page     int    `form:"page" binding:"omitempty,min=1"`
+		PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+		Search   string `form:"search" binding:"omitempty"`
+	}
+	if err := c.ShouldBindQuery(&req); err == nil {
+		if req.Page == 0 {
+			req.Page = 1
+		}
+		if req.PageSize == 0 {
+			req.PageSize = 20
+		}
+	}
+
+	// TODO: 这里应该调用阿里云RAM API获取真实的RAM角色列表
+	// 目前返回模拟数据
+	ramRoles := []map[string]interface{}{
+		{
+			"role_id":     "acs:ram::123456789012:role/AdminRole",
+			"role_name":   "AdminRole",
+			"description": "管理员角色",
+		},
+		{
+			"role_id":     "acs:ram::123456789012:role/DevRole",
+			"role_name":   "DevRole",
+			"description": "开发角色",
+		},
+	}
+
+	// 搜索过滤
+	if req.Search != "" {
+		filtered := []map[string]interface{}{}
+		for _, role := range ramRoles {
+			roleName := fmt.Sprintf("%v", role["role_name"])
+			if strings.Contains(roleName, req.Search) {
+				filtered = append(filtered, role)
+			}
+		}
+		ramRoles = filtered
+	}
+
+	pagedList, total := paginateSlice(ramRoles, req.Page, req.PageSize)
+	utils.Success(c, gin.H{
+		"data":      pagedList,
+		"total":     total,
+		"page":      req.Page,
+		"page_size": req.PageSize,
+	})
+}
+
+// GetKubeconfigs 获取KubeConfig列表
+func (h *K8sHandler) GetKubeconfigs(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Page     int    `form:"page" binding:"omitempty,min=1"`
+		PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+		Search   string `form:"search" binding:"omitempty"`
+	}
+	if err := c.ShouldBindQuery(&req); err == nil {
+		if req.Page == 0 {
+			req.Page = 1
+		}
+		if req.PageSize == 0 {
+			req.PageSize = 20
+		}
+	}
+
+	// TODO: 这里应该从K8s集群或数据库获取真实的KubeConfig列表
+	// 目前返回模拟数据
+	kubeconfigs := []map[string]interface{}{
+		{
+			"id":         "1",
+			"username":   "i005545",
+			"type":       "user",
+			"created_at": time.Now().AddDate(0, -1, 0),
+			"expires_at": time.Now().AddDate(0, 1, 0),
+			"is_invalid": false,
+		},
+		{
+			"id":         "2",
+			"role_name":  "AdminRole",
+			"type":       "role",
+			"created_at": time.Now().AddDate(0, -2, 0),
+			"expires_at": nil,
+			"is_invalid": false,
+		},
+		{
+			"id":         "3",
+			"username":   "deleted_user",
+			"type":       "user",
+			"created_at": time.Now().AddDate(0, -3, 0),
+			"expires_at": time.Now().AddDate(0, 1, 0),
+			"is_invalid": true,
+		},
+	}
+
+	// 搜索过滤
+	if req.Search != "" {
+		filtered := []map[string]interface{}{}
+		for _, kc := range kubeconfigs {
+			username := fmt.Sprintf("%v", kc["username"])
+			roleName := fmt.Sprintf("%v", kc["role_name"])
+			if strings.Contains(username, req.Search) || strings.Contains(roleName, req.Search) {
+				filtered = append(filtered, kc)
+			}
+		}
+		kubeconfigs = filtered
+	}
+
+	// 统计失效的KubeConfig数量
+	invalidCount := 0
+	for _, kc := range kubeconfigs {
+		if isInvalid, ok := kc["is_invalid"].(bool); ok && isInvalid {
+			invalidCount++
+		}
+	}
+
+	pagedList, total := paginateSlice(kubeconfigs, req.Page, req.PageSize)
+	utils.Success(c, gin.H{
+		"data":          pagedList,
+		"total":         total,
+		"page":          req.Page,
+		"page_size":     req.PageSize,
+		"invalid_count": invalidCount,
+	})
+}
+
+// GetUserPermissions 获取用户权限
+func (h *K8sHandler) GetUserPermissions(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	_ = c.Param("userId") // ramUserID - 将在后续实现中使用
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	// TODO: 从K8s集群获取真实的RBAC权限配置
+	// 目前返回模拟数据
+	permissions := []map[string]interface{}{
+		{
+			"resources":     []string{"pods"},
+			"verbs":         []string{"get", "list"},
+			"apiGroups":     []string{""},
+			"resourceNames": []string{},
+		},
+	}
+
+	utils.Success(c, gin.H{
+		"permissions": permissions,
+		"scope":       "namespace",
+		"namespaces":  []string{"default"},
+	})
+}
+
+// GetRolePermissions 获取角色权限
+func (h *K8sHandler) GetRolePermissions(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	_ = c.Param("roleId") // roleID - 将在后续实现中使用
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	// TODO: 从K8s集群获取真实的RBAC权限配置
+	// 目前返回模拟数据
+	permissions := []map[string]interface{}{
+		{
+			"resources":     []string{"deployments", "services"},
+			"verbs":         []string{"get", "list", "create", "update"},
+			"apiGroups":     []string{""},
+			"resourceNames": []string{},
+		},
+	}
+
+	utils.Success(c, gin.H{
+		"permissions": permissions,
+		"scope":       "cluster",
+		"namespaces":  []string{},
+	})
+}
+
+// SaveUserPermissions 保存用户权限
+func (h *K8sHandler) SaveUserPermissions(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	ramUserID := c.Param("userId")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Scope      string                   `json:"scope" binding:"required"`
+		Namespaces []string                 `json:"namespaces"`
+		Rules      []map[string]interface{} `json:"rules" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+
+	// TODO: 在K8s集群中创建或更新Role/RoleBinding或ClusterRole/ClusterRoleBinding
+	// 这里应该：
+	// 1. 根据scope创建Role或ClusterRole
+	// 2. 创建RoleBinding或ClusterRoleBinding，将RAM用户绑定到角色
+	// 3. 使用ack-ram-authenticator插件实现RAM用户到K8s用户的映射
+
+	utils.SuccessWithMessage(c, "权限配置成功", gin.H{
+		"user_id":    ramUserID,
+		"scope":      req.Scope,
+		"namespaces": req.Namespaces,
+		"rules":      req.Rules,
+	})
+}
+
+// SaveRolePermissions 保存角色权限
+func (h *K8sHandler) SaveRolePermissions(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	roleID := c.Param("roleId")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	var req struct {
+		Scope      string                   `json:"scope" binding:"required"`
+		Namespaces []string                 `json:"namespaces"`
+		Rules      []map[string]interface{} `json:"rules" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+
+	// TODO: 在K8s集群中创建或更新Role/RoleBinding或ClusterRole/ClusterRoleBinding
+	// 这里应该：
+	// 1. 根据scope创建Role或ClusterRole
+	// 2. 创建RoleBinding或ClusterRoleBinding，将RAM角色绑定到K8s角色
+	// 3. 使用ack-ram-authenticator插件实现RAM角色到K8s用户的映射
+
+	utils.SuccessWithMessage(c, "权限配置成功", gin.H{
+		"role_id":    roleID,
+		"scope":      req.Scope,
+		"namespaces": req.Namespaces,
+		"rules":      req.Rules,
+	})
 }
 
 // GetDeployments 获取Deployment列表

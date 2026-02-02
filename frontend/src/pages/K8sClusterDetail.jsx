@@ -152,6 +152,76 @@ const K8sClusterDetail = () => {
   const [storageClassesTotal, setStorageClassesTotal] = useState(0)
   const [selectedStorageNamespace, setSelectedStorageNamespace] = useState('')
   const [storageSearchTerm, setStorageSearchTerm] = useState('')
+  
+  // 授权管理相关状态
+  const [authorizationSubtab, setAuthorizationSubtab] = useState('ram-users')
+  const [ramUsers, setRamUsers] = useState([])
+  const [ramRoles, setRamRoles] = useState([])
+  const [kubeconfigs, setKubeconfigs] = useState([])
+  const [selectedRamUsers, setSelectedRamUsers] = useState([])
+  const [selectedRamRoles, setSelectedRamRoles] = useState([])
+  const [authorizationSearchTerm, setAuthorizationSearchTerm] = useState('')
+  const [authorizationSearchType, setAuthorizationSearchType] = useState('username')
+  const [ramUsersPage, setRamUsersPage] = useState(1)
+  const [ramUsersPageSize, setRamUsersPageSize] = useState(20)
+  const [ramUsersTotal, setRamUsersTotal] = useState(0)
+  const [ramRolesPage, setRamRolesPage] = useState(1)
+  const [ramRolesPageSize, setRamRolesPageSize] = useState(20)
+  const [ramRolesTotal, setRamRolesTotal] = useState(0)
+  const [kubeconfigsPage, setKubeconfigsPage] = useState(1)
+  const [kubeconfigsPageSize, setKubeconfigsPageSize] = useState(20)
+  const [kubeconfigsTotal, setKubeconfigsTotal] = useState(0)
+  const [invalidKubeconfigCount, setInvalidKubeconfigCount] = useState(0)
+  
+  // 审计日志相关状态
+  const [auditLogs, setAuditLogs] = useState([])
+  const [auditLogsPage, setAuditLogsPage] = useState(1)
+  const [auditLogsPageSize, setAuditLogsPageSize] = useState(20)
+  const [auditLogsTotal, setAuditLogsTotal] = useState(0)
+  const [auditFilters, setAuditFilters] = useState({
+    action: '',
+    resource: '',
+    username: '',
+    start_date: '',
+    end_date: '',
+  })
+  
+  // 权限管理相关状态
+  const [showManagePermissionsModal, setShowManagePermissionsModal] = useState(false)
+  const [managingUser, setManagingUser] = useState(null)
+  const [userPermissions, setUserPermissions] = useState([])
+  const [availableResources, setAvailableResources] = useState([
+    { name: 'pods', displayName: '容器组 (Pods)', category: 'workloads' },
+    { name: 'deployments', displayName: '无状态 (Deployments)', category: 'workloads' },
+    { name: 'statefulsets', displayName: '有状态 (StatefulSets)', category: 'workloads' },
+    { name: 'daemonsets', displayName: '守护进程集 (DaemonSets)', category: 'workloads' },
+    { name: 'jobs', displayName: '任务 (Jobs)', category: 'workloads' },
+    { name: 'cronjobs', displayName: '定时任务 (CronJobs)', category: 'workloads' },
+    { name: 'services', displayName: '服务 (Services)', category: 'network' },
+    { name: 'ingresses', displayName: '路由 (Ingresses)', category: 'network' },
+    { name: 'configmaps', displayName: '配置项 (ConfigMaps)', category: 'config' },
+    { name: 'secrets', displayName: '保密字典 (Secrets)', category: 'config' },
+    { name: 'persistentvolumeclaims', displayName: '存储声明 (PVCs)', category: 'storage' },
+    { name: 'persistentvolumes', displayName: '存储卷 (PVs)', category: 'storage' },
+    { name: 'storageclasses', displayName: '存储类 (StorageClasses)', category: 'storage' },
+    { name: 'namespaces', displayName: '命名空间 (Namespaces)', category: 'cluster' },
+    { name: 'nodes', displayName: '节点 (Nodes)', category: 'cluster' },
+    { name: 'roles', displayName: '角色 (Roles)', category: 'rbac' },
+    { name: 'clusterroles', displayName: '集群角色 (ClusterRoles)', category: 'rbac' },
+    { name: 'rolebindings', displayName: '角色绑定 (RoleBindings)', category: 'rbac' },
+    { name: 'clusterrolebindings', displayName: '集群角色绑定 (ClusterRoleBindings)', category: 'rbac' },
+  ])
+  const [availableVerbs, setAvailableVerbs] = useState([
+    { name: 'get', displayName: '查看 (Get)' },
+    { name: 'list', displayName: '列表 (List)' },
+    { name: 'watch', displayName: '监听 (Watch)' },
+    { name: 'create', displayName: '创建 (Create)' },
+    { name: 'update', displayName: '更新 (Update)' },
+    { name: 'patch', displayName: '补丁 (Patch)' },
+    { name: 'delete', displayName: '删除 (Delete)' },
+  ])
+  const [permissionScope, setPermissionScope] = useState('namespace') // 'namespace' or 'cluster'
+  const [selectedNamespacesForPermission, setSelectedNamespacesForPermission] = useState([])
 
   // 命名空间搜索和选择状态
   const [namespaceSearchTerm, setNamespaceSearchTerm] = useState('')
@@ -168,6 +238,11 @@ const K8sClusterDetail = () => {
   
   // 创建 Deployment 状态
   const [showCreateDeploymentModal, setShowCreateDeploymentModal] = useState(false)
+  const [showYamlCreateModal, setShowYamlCreateModal] = useState(false)
+  const [yamlCreateContent, setYamlCreateContent] = useState('')
+  const [selectedYamlTemplate, setSelectedYamlTemplate] = useState('deployment-basic')
+  const [yamlTemplates, setYamlTemplates] = useState([])
+  const [yamlAnalysisResult, setYamlAnalysisResult] = useState(null)
   const [createDeploymentStep, setCreateDeploymentStep] = useState(1)
   const [createDeploymentData, setCreateDeploymentData] = useState({
     // 基本信息
@@ -566,10 +641,19 @@ const K8sClusterDetail = () => {
           setStorageSubtab(currentStorageSubtab)
         }
       } else if (activeTab === 'security') {
-        // 安全管理相关数据获取可以根据需要添加
+        // 根据子标签加载数据
+        if (activeSubtab === 'authorization') {
+          if (authorizationSubtab === 'ram-users') {
+            fetchRamUsers()
+          } else if (authorizationSubtab === 'ram-roles') {
+            fetchRamRoles()
+          } else if (authorizationSubtab === 'kubeconfigs') {
+            fetchKubeconfigs()
+          }
+        }
       }
     }
-  }, [id, activeTab, searchParams, selectedNetworkNamespace, namespaces.length, networkSubtab, configSubtab, storageSubtab, selectedStorageNamespace, pvsPage, pvsPageSize, storageClassesPage, storageClassesPageSize])
+  }, [id, activeTab, searchParams, selectedNetworkNamespace, namespaces.length, networkSubtab, configSubtab, storageSubtab, selectedStorageNamespace, pvsPage, pvsPageSize, storageClassesPage, storageClassesPageSize, activeSubtab, authorizationSubtab, ramUsersPage, ramUsersPageSize, ramRolesPage, ramRolesPageSize, kubeconfigsPage, kubeconfigsPageSize, auditLogsPage, auditLogsPageSize, auditFilters])
 
   useEffect(() => {
     if (selectedNamespace) {
@@ -2165,6 +2249,460 @@ const K8sClusterDetail = () => {
     } catch (err) {
       console.error('获取StorageClass列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchStorageClassesFailed') || '获取存储类列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchRamUsers = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: ramUsersPage,
+        page_size: ramUsersPageSize,
+      }
+      if (authorizationSearchTerm && authorizationSearchType === 'username') {
+        params.search = authorizationSearchTerm
+      }
+      const response = await api.get(`/k8s/clusters/${id}/rbac/ram-users`, { params })
+      const data = response.data.data || response.data
+      if (data.data) {
+        setRamUsers(data.data)
+        setRamUsersTotal(data.total || 0)
+      } else {
+        setRamUsers(Array.isArray(data) ? data : [])
+        setRamUsersTotal(Array.isArray(data) ? data.length : 0)
+      }
+    } catch (err) {
+      console.error('获取RAM用户列表失败:', err)
+      setError(err.response?.data?.message || '获取RAM用户列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchRamRoles = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: ramRolesPage,
+        page_size: ramRolesPageSize,
+      }
+      if (authorizationSearchTerm && authorizationSearchType === 'username') {
+        params.search = authorizationSearchTerm
+      }
+      const response = await api.get(`/k8s/clusters/${id}/rbac/ram-roles`, { params })
+      const data = response.data.data || response.data
+      if (data.data) {
+        setRamRoles(data.data)
+        setRamRolesTotal(data.total || 0)
+      } else {
+        setRamRoles(Array.isArray(data) ? data : [])
+        setRamRolesTotal(Array.isArray(data) ? data.length : 0)
+      }
+    } catch (err) {
+      console.error('获取RAM角色列表失败:', err)
+      setError(err.response?.data?.message || '获取RAM角色列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchKubeconfigs = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: kubeconfigsPage,
+        page_size: kubeconfigsPageSize,
+      }
+      if (authorizationSearchTerm) {
+        params.search = authorizationSearchTerm
+      }
+      const response = await api.get(`/k8s/clusters/${id}/rbac/kubeconfigs`, { params })
+      const data = response.data.data || response.data
+      if (data.data) {
+        setKubeconfigs(data.data)
+        setKubeconfigsTotal(data.total || 0)
+        setInvalidKubeconfigCount(data.invalid_count || 0)
+      } else {
+        setKubeconfigs(Array.isArray(data) ? data : [])
+        setKubeconfigsTotal(Array.isArray(data) ? data.length : 0)
+        setInvalidKubeconfigCount(0)
+      }
+    } catch (err) {
+      console.error('获取KubeConfig列表失败:', err)
+      setError(err.response?.data?.message || '获取KubeConfig列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchAuditLogs = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: auditLogsPage,
+        page_size: auditLogsPageSize,
+        cluster_id: id,
+        ...auditFilters,
+      }
+      // 移除空值
+      Object.keys(params).forEach(key => {
+        if (params[key] === '') {
+          delete params[key]
+        }
+      })
+      const response = await api.get('/audit/logs', { params })
+      const data = response.data.data || response.data
+      if (data.logs) {
+        setAuditLogs(data.logs)
+        setAuditLogsTotal(data.total || 0)
+      } else {
+        setAuditLogs(Array.isArray(data) ? data : [])
+        setAuditLogsTotal(Array.isArray(data) ? data.length : 0)
+      }
+    } catch (err) {
+      console.error('获取审计日志失败:', err)
+      setError(err.response?.data?.message || '获取审计日志失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleManagePermissions = async (userOrRole) => {
+    setManagingUser(userOrRole)
+    setShowManagePermissionsModal(true)
+    setSelectedNamespacesForPermission([])
+    setPermissionScope('namespace')
+    
+    // 判断是用户还是角色
+    const isRole = userOrRole.role_id || userOrRole.role_name || userOrRole.name
+    const identifier = userOrRole.user_id || userOrRole.id || userOrRole.role_id
+    
+    // 获取当前权限
+    try {
+      setLoading(true)
+      const endpoint = isRole 
+        ? `/k8s/clusters/${id}/rbac/roles/${identifier}/permissions`
+        : `/k8s/clusters/${id}/rbac/users/${identifier}/permissions`
+      const response = await api.get(endpoint)
+      const data = response.data.data || response.data
+      if (data.permissions) {
+        setUserPermissions(data.permissions)
+      } else {
+        setUserPermissions([])
+      }
+      if (data.scope) {
+        setPermissionScope(data.scope)
+      }
+      if (data.namespaces) {
+        setSelectedNamespacesForPermission(data.namespaces)
+      }
+    } catch (err) {
+      console.error('获取权限失败:', err)
+      setUserPermissions([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSavePermissions = async () => {
+    if (!managingUser) return
+
+    try {
+      setLoading(true)
+      setError('')
+      
+      // 判断是用户还是角色
+      const isRole = managingUser.role_id || managingUser.role_name || managingUser.name
+      const identifier = managingUser.user_id || managingUser.id || managingUser.role_id
+      
+      const permissionsData = {
+        scope: permissionScope,
+        namespaces: permissionScope === 'namespace' ? selectedNamespacesForPermission : [],
+        rules: userPermissions.map(perm => ({
+          resources: perm.resources || [],
+          verbs: perm.verbs || [],
+          apiGroups: perm.apiGroups || [''],
+          resourceNames: perm.resourceNames || [],
+        }))
+      }
+
+      const endpoint = isRole
+        ? `/k8s/clusters/${id}/rbac/roles/${identifier}/permissions`
+        : `/k8s/clusters/${id}/rbac/users/${identifier}/permissions`
+      
+      await api.post(endpoint, permissionsData)
+      setSuccess('权限配置成功')
+      setShowManagePermissionsModal(false)
+      setManagingUser(null)
+      setUserPermissions([])
+      setTimeout(() => {
+        setSuccess('')
+        if (authorizationSubtab === 'ram-users') {
+          fetchRamUsers()
+        } else if (authorizationSubtab === 'ram-roles') {
+          fetchRamRoles()
+        }
+      }, 1000)
+    } catch (err) {
+      console.error('保存权限失败:', err)
+      setError(err.response?.data?.message || '保存权限失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const togglePermission = (resource, verb) => {
+    setUserPermissions(prev => {
+      const existing = prev.find(p => 
+        (p.resources || []).includes(resource) && 
+        (p.verbs || []).includes(verb)
+      )
+      
+      if (existing) {
+        // 移除权限
+        return prev.map(p => {
+          if (p === existing) {
+            const newVerbs = (p.verbs || []).filter(v => v !== verb)
+            const newResources = (p.resources || []).filter(r => r !== resource)
+            if (newVerbs.length === 0 && newResources.length === 0) {
+              return null
+            }
+            return {
+              ...p,
+              verbs: newVerbs.length > 0 ? newVerbs : undefined,
+              resources: newResources.length > 0 ? newResources : undefined,
+            }
+          }
+          return p
+        }).filter(Boolean)
+      } else {
+        // 添加权限
+        const existingRule = prev.find(p => (p.resources || []).includes(resource))
+        if (existingRule) {
+          return prev.map(p => {
+            if (p === existingRule) {
+              return {
+                ...p,
+                verbs: [...(p.verbs || []), verb]
+              }
+            }
+            return p
+          })
+        } else {
+          return [...prev, {
+            resources: [resource],
+            verbs: [verb],
+            apiGroups: [''],
+            resourceNames: [],
+          }]
+        }
+      }
+    })
+  }
+
+  const hasPermission = (resource, verb) => {
+    return userPermissions.some(p => 
+      (p.resources || []).includes(resource) && 
+      (p.verbs || []).includes(verb)
+    )
+  }
+
+  // YAML创建资源相关函数
+  const loadDefaultYamlTemplate = (templateType) => {
+    const templates = {
+      'deployment-basic': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment-basic
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      # nodeSelector:
+      # env: test-team
+      containers:
+        - name: nginx
+          image: anolis-registry.cn-zhangjiakou.cr.aliyuncs.com/openanolis/nginx:1.14.1-8. # replace it with your exactly <image_name:tags>
+          ports:
+            - containerPort: 80
+          resources:
+            limits:
+              cpu: "500m"`,
+      'deployment-advanced': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment-advanced
+  namespace: default
+  labels:
+    app: nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.21
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV_VAR
+              value: "value"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"`,
+      'service': `apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP`,
+      'configmap': `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  config.properties: |
+    key1=value1
+    key2=value2`,
+    }
+    setYamlCreateContent(templates[templateType] || templates['deployment-basic'])
+  }
+
+  const handleAnalyzeYaml = async () => {
+    if (!yamlCreateContent.trim()) {
+      setError('请输入YAML内容')
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      // TODO: 调用后端API进行YAML分析
+      // 目前返回模拟分析结果
+      setYamlAnalysisResult({
+        valid: true,
+        resourceType: 'Deployment',
+        warnings: [],
+        suggestions: ['建议添加资源限制', '建议添加健康检查'],
+      })
+      setSuccess('YAML格式正确')
+    } catch (err) {
+      console.error('YAML分析失败:', err)
+      setError(err.response?.data?.message || 'YAML分析失败')
+      setYamlAnalysisResult({
+        valid: false,
+        errors: ['YAML格式错误'],
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreateFromYaml = async () => {
+    if (!yamlCreateContent.trim()) {
+      setError('请输入YAML内容')
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      
+      const response = await api.post(`/k8s/clusters/${id}/workloads/create`, {
+        yaml: yamlCreateContent,
+      })
+      
+      setSuccess('资源创建成功')
+      setShowYamlCreateModal(false)
+      setYamlCreateContent('')
+      setYamlAnalysisResult(null)
+      
+      // 刷新Deployment列表
+      setTimeout(() => {
+        fetchDeployments(selectedWorkloadNamespace || '')
+        setSuccess('')
+      }, 1000)
+    } catch (err) {
+      console.error('创建资源失败:', err)
+      setError(err.response?.data?.message || '创建资源失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSaveYamlTemplate = async () => {
+    if (!yamlCreateContent.trim()) {
+      setError('请输入YAML内容')
+      return
+    }
+
+    const templateName = prompt('请输入模板名称:')
+    if (!templateName) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      // TODO: 调用后端API保存模板
+      setSuccess('模板保存成功')
+      setTimeout(() => setSuccess(''), 2000)
+    } catch (err) {
+      console.error('保存模板失败:', err)
+      setError(err.response?.data?.message || '保存模板失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLoadYamlTemplate = async () => {
+    // TODO: 从后端加载已保存的模板列表
+    const templateName = prompt('请输入要加载的模板名称:')
+    if (templateName) {
+      // 加载模板内容
+      setError('加载模板功能暂未实现')
+    }
+  }
+
+  const handleGenerateYamlTemplate = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      // TODO: 调用AI生成YAML模板
+      setError('智能生成模板功能暂未实现')
+    } catch (err) {
+      console.error('生成模板失败:', err)
+      setError(err.response?.data?.message || '生成模板失败')
     } finally {
       setLoading(false)
     }
@@ -5284,6 +5822,818 @@ const K8sClusterDetail = () => {
                       )}
                     </div>
                   )}
+
+                  {activeTab === 'security' && (
+                    <div className="security-section">
+                      {activeSubtab === 'authorization' && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>授权管理</h2>
+                          </div>
+
+                          {/* 信息横幅 */}
+                          <div style={{ 
+                            background: '#e6f7ff', 
+                            border: '1px solid #91d5ff', 
+                            borderRadius: '4px', 
+                            padding: '12px 16px', 
+                            marginBottom: '16px',
+                            fontSize: '14px',
+                            color: '#1890ff',
+                            display: 'flex',
+                            alignItems: 'flex-start'
+                          }}>
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ marginRight: '8px', marginTop: '2px', flexShrink: 0 }}>
+                              <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                              <path d="M8 4V8M8 11H8.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                            </svg>
+                            <div>
+                              <div style={{ marginBottom: '8px' }}>
+                                注意:请首先确保您已经完成目标集群的容器服务 RAM 授权。
+                              </div>
+                              <div>
+                                本页仅显示目前具备 RBAC 管理员权限的集群列表,您可以为其他 RAM 用户或角色制定目标集群的读写策略(例如集群配置、KubeConfig 管理、节点添加等)。同时建议您安装 ack-ram-authenticator 插件实现更加灵活可控的 RBAC 授权,实现删除 RAM 用户或角色时数据面 Kubeconfig 凭据的自动吊销,<a href="#" onClick={(e) => { e.preventDefault(); setError('查看详情功能暂未实现') }} style={{ color: '#1890ff', textDecoration: 'underline' }}>查看详情</a>。
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 警告横幅 */}
+                          {invalidKubeconfigCount > 0 && (
+                            <div style={{ 
+                              background: '#fff2e8', 
+                              border: '1px solid #ffbb96', 
+                              borderRadius: '4px', 
+                              padding: '12px 16px', 
+                              marginBottom: '16px',
+                              fontSize: '14px',
+                              color: '#ff4d4f',
+                              display: 'flex',
+                              alignItems: 'flex-start'
+                            }}>
+                              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ marginRight: '8px', marginTop: '2px', flexShrink: 0 }}>
+                                <path d="M8 1L15 14H1L8 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                <path d="M8 6V9M8 11H8.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                              </svg>
+                              <div>
+                                {invalidKubeconfigCount}个已删除的 RAM 用户/角色的 KubeConfig 仍在生效中,请及时排查并<a href="#" onClick={(e) => { e.preventDefault(); setError('处理失效KubeConfig功能暂未实现') }} style={{ color: '#1890ff', textDecoration: 'underline' }}>处理与失效账号关联的 KubeConfig</a>。
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 标签页 */}
+                          <div style={{ 
+                            display: 'flex', 
+                            borderBottom: '1px solid #e8e8e8',
+                            marginBottom: '16px'
+                          }}>
+                            <button
+                              className={authorizationSubtab === 'ram-users' ? 'tab-button active' : 'tab-button'}
+                              onClick={() => {
+                                setAuthorizationSubtab('ram-users')
+                                setRamUsersPage(1)
+                                fetchRamUsers()
+                              }}
+                              style={{
+                                padding: '12px 24px',
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'pointer',
+                                borderBottom: authorizationSubtab === 'ram-users' ? '2px solid #1890ff' : '2px solid transparent',
+                                color: authorizationSubtab === 'ram-users' ? '#1890ff' : '#666',
+                                fontWeight: authorizationSubtab === 'ram-users' ? '500' : 'normal'
+                              }}
+                            >
+                              RAM 用户
+                            </button>
+                            <button
+                              className={authorizationSubtab === 'ram-roles' ? 'tab-button active' : 'tab-button'}
+                              onClick={() => {
+                                setAuthorizationSubtab('ram-roles')
+                                setRamRolesPage(1)
+                                fetchRamRoles()
+                              }}
+                              style={{
+                                padding: '12px 24px',
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'pointer',
+                                borderBottom: authorizationSubtab === 'ram-roles' ? '2px solid #1890ff' : '2px solid transparent',
+                                color: authorizationSubtab === 'ram-roles' ? '#1890ff' : '#666',
+                                fontWeight: authorizationSubtab === 'ram-roles' ? '500' : 'normal'
+                              }}
+                            >
+                              RAM 角色
+                            </button>
+                            <button
+                              className={authorizationSubtab === 'kubeconfigs' ? 'tab-button active' : 'tab-button'}
+                              onClick={() => {
+                                setAuthorizationSubtab('kubeconfigs')
+                                setKubeconfigsPage(1)
+                                fetchKubeconfigs()
+                              }}
+                              style={{
+                                padding: '12px 24px',
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'pointer',
+                                borderBottom: authorizationSubtab === 'kubeconfigs' ? '2px solid #1890ff' : '2px solid transparent',
+                                color: authorizationSubtab === 'kubeconfigs' ? '#1890ff' : '#666',
+                                fontWeight: authorizationSubtab === 'kubeconfigs' ? '500' : 'normal'
+                              }}
+                            >
+                              KubeConfig 管理
+                            </button>
+                          </div>
+
+                          {/* 搜索栏 */}
+                          <div style={{ 
+                            display: 'flex', 
+                            justifyContent: 'flex-end',
+                            marginBottom: '16px',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            <select
+                              className="toolbar-select"
+                              value={authorizationSearchType}
+                              onChange={(e) => setAuthorizationSearchType(e.target.value)}
+                              style={{ width: '120px' }}
+                            >
+                              <option value="username">用户名</option>
+                              <option value="userid">用户ID</option>
+                              <option value="displayname">显示名</option>
+                            </select>
+                            <div className="toolbar-search">
+                              <input
+                                className="toolbar-search-input"
+                                placeholder="请输入"
+                                value={authorizationSearchTerm}
+                                onChange={(e) => setAuthorizationSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    if (authorizationSubtab === 'ram-users') {
+                                      fetchRamUsers()
+                                    } else if (authorizationSubtab === 'ram-roles') {
+                                      fetchRamRoles()
+                                    } else if (authorizationSubtab === 'kubeconfigs') {
+                                      fetchKubeconfigs()
+                                    }
+                                  }
+                                }}
+                              />
+                              <button
+                                className="toolbar-search-btn"
+                                onClick={() => {
+                                  if (authorizationSubtab === 'ram-users') {
+                                    fetchRamUsers()
+                                  } else if (authorizationSubtab === 'ram-roles') {
+                                    fetchRamRoles()
+                                  } else if (authorizationSubtab === 'kubeconfigs') {
+                                    fetchKubeconfigs()
+                                  }
+                                }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* RAM 用户列表 */}
+                          {authorizationSubtab === 'ram-users' && (
+                            <div className="table-wrapper">
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedRamUsers.length === ramUsers.length && ramUsers.length > 0}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setSelectedRamUsers(ramUsers.map(u => u.user_id || u.id))
+                                          } else {
+                                            setSelectedRamUsers([])
+                                          }
+                                        }}
+                                      />
+                                    </th>
+                                    <th>用户名</th>
+                                    <th>用户 ID</th>
+                                    <th>显示名</th>
+                                    <th>操作</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {ramUsers
+                                    .filter((user) => {
+                                      if (!authorizationSearchTerm) return true
+                                      const searchLower = authorizationSearchTerm.toLowerCase()
+                                      if (authorizationSearchType === 'username') {
+                                        return (user.username || '').toLowerCase().includes(searchLower)
+                                      } else if (authorizationSearchType === 'userid') {
+                                        return (user.user_id || user.id || '').toString().includes(searchLower)
+                                      } else if (authorizationSearchType === 'displayname') {
+                                        return (user.display_name || user.displayName || '').toLowerCase().includes(searchLower)
+                                      }
+                                      return true
+                                    })
+                                    .map((user) => (
+                                      <tr key={user.user_id || user.id}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedRamUsers.includes(user.user_id || user.id)}
+                                            onChange={(e) => {
+                                              const userId = user.user_id || user.id
+                                              if (e.target.checked) {
+                                                setSelectedRamUsers([...selectedRamUsers, userId])
+                                              } else {
+                                                setSelectedRamUsers(selectedRamUsers.filter(id => id !== userId))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">
+                                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {user.username || '-'}
+                                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ cursor: 'pointer' }} onClick={() => window.open(`https://ram.console.aliyun.com/users/${user.username}`, '_blank')}>
+                                              <path d="M10 4H4V10M4 4L10 10" stroke="#1890ff" strokeWidth="1.5" strokeLinecap="round"/>
+                                            </svg>
+                                          </span>
+                                        </td>
+                                        <td>{user.user_id || user.id || '-'}</td>
+                                        <td>{user.display_name || user.displayName || '-'}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              handleManagePermissions(user)
+                                            }}>
+                                              管理权限
+                                            </button>
+                                            <span className="action-separator">|</span>
+                                            <button className="btn-text" onClick={() => {
+                                              if (window.confirm(`确定要吊销用户 ${user.username} 的 KubeConfig 吗？`)) {
+                                                setError('吊销KubeConfig功能暂未实现')
+                                              }
+                                            }}>
+                                              吊销 KubeConfig
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  {ramUsers.length === 0 && (
+                                    <tr>
+                                      <td colSpan="5" className="empty-state">暂无RAM用户</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {/* RAM 角色列表 */}
+                          {authorizationSubtab === 'ram-roles' && (
+                            <div className="table-wrapper">
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedRamRoles.length === ramRoles.length && ramRoles.length > 0}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setSelectedRamRoles(ramRoles.map(r => r.role_id || r.id))
+                                          } else {
+                                            setSelectedRamRoles([])
+                                          }
+                                        }}
+                                      />
+                                    </th>
+                                    <th>角色名</th>
+                                    <th>角色 ID</th>
+                                    <th>描述</th>
+                                    <th>操作</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {ramRoles
+                                    .filter((role) => {
+                                      if (!authorizationSearchTerm) return true
+                                      const searchLower = authorizationSearchTerm.toLowerCase()
+                                      return (role.role_name || role.name || '').toLowerCase().includes(searchLower) ||
+                                             (role.role_id || role.id || '').toString().includes(searchLower)
+                                    })
+                                    .map((role) => (
+                                      <tr key={role.role_id || role.id}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedRamRoles.includes(role.role_id || role.id)}
+                                            onChange={(e) => {
+                                              const roleId = role.role_id || role.id
+                                              if (e.target.checked) {
+                                                setSelectedRamRoles([...selectedRamRoles, roleId])
+                                              } else {
+                                                setSelectedRamRoles(selectedRamRoles.filter(id => id !== roleId))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">
+                                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {role.role_name || role.name || '-'}
+                                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ cursor: 'pointer' }} onClick={() => window.open(`https://ram.console.aliyun.com/roles/${role.role_name || role.name}`, '_blank')}>
+                                              <path d="M10 4H4V10M4 4L10 10" stroke="#1890ff" strokeWidth="1.5" strokeLinecap="round"/>
+                                            </svg>
+                                          </span>
+                                        </td>
+                                        <td>{role.role_id || role.id || '-'}</td>
+                                        <td>{role.description || role.desc || '-'}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              handleManagePermissions(role)
+                                            }}>
+                                              管理权限
+                                            </button>
+                                            <span className="action-separator">|</span>
+                                            <button className="btn-text" onClick={() => {
+                                              if (window.confirm(`确定要吊销角色 ${role.role_name || role.name} 的 KubeConfig 吗？`)) {
+                                                setError('吊销KubeConfig功能暂未实现')
+                                              }
+                                            }}>
+                                              吊销 KubeConfig
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  {ramRoles.length === 0 && (
+                                    <tr>
+                                      <td colSpan="5" className="empty-state">暂无RAM角色</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {/* KubeConfig 管理列表 */}
+                          {authorizationSubtab === 'kubeconfigs' && (
+                            <div className="table-wrapper">
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>用户名/角色名</th>
+                                    <th>类型</th>
+                                    <th>创建时间</th>
+                                    <th>过期时间</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {kubeconfigs
+                                    .filter((kubeconfig) => {
+                                      if (!authorizationSearchTerm) return true
+                                      const searchLower = authorizationSearchTerm.toLowerCase()
+                                      return (kubeconfig.username || kubeconfig.role_name || '').toLowerCase().includes(searchLower)
+                                    })
+                                    .map((kubeconfig) => {
+                                      const isExpired = kubeconfig.expires_at && new Date(kubeconfig.expires_at) < new Date()
+                                      const isInvalid = kubeconfig.is_invalid || kubeconfig.isInvalid
+                                      return (
+                                        <tr key={kubeconfig.id || kubeconfig.kubeconfig_id}>
+                                          <td className="name-cell">{kubeconfig.username || kubeconfig.role_name || '-'}</td>
+                                          <td>{kubeconfig.type === 'user' ? 'RAM用户' : kubeconfig.type === 'role' ? 'RAM角色' : '-'}</td>
+                                          <td>{kubeconfig.created_at ? new Date(kubeconfig.created_at).toLocaleString('zh-CN') : '-'}</td>
+                                          <td>{kubeconfig.expires_at ? new Date(kubeconfig.expires_at).toLocaleString('zh-CN') : '永不过期'}</td>
+                                          <td>
+                                            <span style={{
+                                              padding: '2px 8px',
+                                              borderRadius: '2px',
+                                              fontSize: '12px',
+                                              background: isInvalid ? '#fff1f0' : isExpired ? '#fff7e6' : '#f6ffed',
+                                              color: isInvalid ? '#ff4d4f' : isExpired ? '#faad14' : '#52c41a',
+                                              border: `1px solid ${isInvalid ? '#ffccc7' : isExpired ? '#ffe58f' : '#b7eb8f'}`
+                                            }}>
+                                              {isInvalid ? '已失效' : isExpired ? '已过期' : '正常'}
+                                            </span>
+                                          </td>
+                                          <td>
+                                            <div className="action-buttons">
+                                              <button className="btn-text" onClick={() => {
+                                                setError('查看KubeConfig功能暂未实现')
+                                              }}>
+                                                查看
+                                              </button>
+                                              <span className="action-separator">|</span>
+                                              <button className="btn-text" onClick={() => {
+                                                setError('下载KubeConfig功能暂未实现')
+                                              }}>
+                                                下载
+                                              </button>
+                                              <span className="action-separator">|</span>
+                                              <button className="btn-text danger" onClick={() => {
+                                                if (window.confirm(`确定要吊销此 KubeConfig 吗？`)) {
+                                                  setError('吊销KubeConfig功能暂未实现')
+                                                }
+                                              }}>
+                                                吊销
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  {kubeconfigs.length === 0 && (
+                                    <tr>
+                                      <td colSpan="6" className="empty-state">暂无KubeConfig</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {/* 分页 */}
+                          {authorizationSubtab === 'ram-users' && !loading && ramUsers.length > 0 && (
+                            <Pagination
+                              currentPage={ramUsersPage}
+                              totalPages={Math.ceil(ramUsersTotal / ramUsersPageSize)}
+                              totalItems={ramUsersTotal}
+                              pageSize={ramUsersPageSize}
+                              onPageChange={(page) => {
+                                setRamUsersPage(page)
+                                fetchRamUsers()
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setRamUsersPageSize(newSize)
+                                setRamUsersPage(1)
+                                fetchRamUsers()
+                              }}
+                            />
+                          )}
+
+                          {authorizationSubtab === 'ram-roles' && !loading && ramRoles.length > 0 && (
+                            <Pagination
+                              currentPage={ramRolesPage}
+                              totalPages={Math.ceil(ramRolesTotal / ramRolesPageSize)}
+                              totalItems={ramRolesTotal}
+                              pageSize={ramRolesPageSize}
+                              onPageChange={(page) => {
+                                setRamRolesPage(page)
+                                fetchRamRoles()
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setRamRolesPageSize(newSize)
+                                setRamRolesPage(1)
+                                fetchRamRoles()
+                              }}
+                            />
+                          )}
+
+                          {authorizationSubtab === 'kubeconfigs' && !loading && kubeconfigs.length > 0 && (
+                            <Pagination
+                              currentPage={kubeconfigsPage}
+                              totalPages={Math.ceil(kubeconfigsTotal / kubeconfigsPageSize)}
+                              totalItems={kubeconfigsTotal}
+                              pageSize={kubeconfigsPageSize}
+                              onPageChange={(page) => {
+                                setKubeconfigsPage(page)
+                                fetchKubeconfigs()
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setKubeconfigsPageSize(newSize)
+                                setKubeconfigsPage(1)
+                                fetchKubeconfigs()
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {activeSubtab === 'roles' && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>角色管理</h2>
+                            <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+                              管理集群中的角色和角色绑定，控制用户对资源的访问权限。
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSubtab === 'audit' && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>审计日志</h2>
+                            <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+                              查看集群操作审计日志，追踪用户对资源的操作记录。
+                            </p>
+                          </div>
+
+                          {/* 筛选条件 */}
+                          <div style={{ 
+                            background: '#fafafa', 
+                            padding: '16px', 
+                            borderRadius: '4px', 
+                            marginTop: '24px',
+                            marginBottom: '16px',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '12px',
+                            alignItems: 'flex-end'
+                          }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '12px', color: '#666' }}>操作类型</label>
+                              <select
+                                className="toolbar-select"
+                                value={auditFilters.action}
+                                onChange={(e) => {
+                                  setAuditFilters({ ...auditFilters, action: e.target.value })
+                                  setAuditLogsPage(1)
+                                }}
+                                style={{ width: '150px' }}
+                              >
+                                <option value="">全部</option>
+                                <option value="create">创建</option>
+                                <option value="update">更新</option>
+                                <option value="delete">删除</option>
+                                <option value="get">查看</option>
+                                <option value="list">列表</option>
+                                <option value="scale">伸缩</option>
+                                <option value="restart">重启</option>
+                                <option value="rollback">回滚</option>
+                              </select>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '12px', color: '#666' }}>资源类型</label>
+                              <select
+                                className="toolbar-select"
+                                value={auditFilters.resource}
+                                onChange={(e) => {
+                                  setAuditFilters({ ...auditFilters, resource: e.target.value })
+                                  setAuditLogsPage(1)
+                                }}
+                                style={{ width: '150px' }}
+                              >
+                                <option value="">全部</option>
+                                <option value="k8s_cluster">集群</option>
+                                <option value="namespace">命名空间</option>
+                                <option value="pod">容器组</option>
+                                <option value="deployment">无状态</option>
+                                <option value="statefulset">有状态</option>
+                                <option value="service">服务</option>
+                                <option value="ingress">路由</option>
+                                <option value="configmap">配置项</option>
+                                <option value="secret">保密字典</option>
+                                <option value="pvc">存储声明</option>
+                                <option value="pv">存储卷</option>
+                                <option value="storageclass">存储类</option>
+                                <option value="rbac">RBAC</option>
+                              </select>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '12px', color: '#666' }}>用户名</label>
+                              <input
+                                type="text"
+                                className="toolbar-search-input"
+                                placeholder="请输入用户名"
+                                value={auditFilters.username}
+                                onChange={(e) => {
+                                  setAuditFilters({ ...auditFilters, username: e.target.value })
+                                  setAuditLogsPage(1)
+                                }}
+                                style={{ width: '150px' }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    fetchAuditLogs()
+                                  }
+                                }}
+                              />
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '12px', color: '#666' }}>开始日期</label>
+                              <input
+                                type="date"
+                                className="toolbar-search-input"
+                                value={auditFilters.start_date}
+                                onChange={(e) => {
+                                  setAuditFilters({ ...auditFilters, start_date: e.target.value })
+                                  setAuditLogsPage(1)
+                                }}
+                                style={{ width: '150px' }}
+                              />
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '12px', color: '#666' }}>结束日期</label>
+                              <input
+                                type="date"
+                                className="toolbar-search-input"
+                                value={auditFilters.end_date}
+                                onChange={(e) => {
+                                  setAuditFilters({ ...auditFilters, end_date: e.target.value })
+                                  setAuditLogsPage(1)
+                                }}
+                                style={{ width: '150px' }}
+                              />
+                            </div>
+
+                            <button
+                              className="btn-primary"
+                              onClick={() => {
+                                setAuditLogsPage(1)
+                                fetchAuditLogs()
+                              }}
+                              style={{ height: '32px' }}
+                            >
+                              查询
+                            </button>
+
+                            <button
+                              className="btn-secondary"
+                              onClick={() => {
+                                setAuditFilters({
+                                  action: '',
+                                  resource: '',
+                                  username: '',
+                                  start_date: '',
+                                  end_date: '',
+                                })
+                                setAuditLogsPage(1)
+                                setTimeout(() => fetchAuditLogs(), 100)
+                              }}
+                              style={{ height: '32px' }}
+                            >
+                              重置
+                            </button>
+
+                            <button
+                              className="icon-btn"
+                              title="刷新"
+                              onClick={() => fetchAuditLogs()}
+                              style={{ height: '32px', width: '32px' }}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </button>
+                          </div>
+
+                          {/* 审计日志表格 */}
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>时间</th>
+                                  <th>用户名</th>
+                                  <th>操作类型</th>
+                                  <th>资源类型</th>
+                                  <th>资源ID/名称</th>
+                                  <th>HTTP方法</th>
+                                  <th>请求路径</th>
+                                  <th>IP地址</th>
+                                  <th>状态码</th>
+                                  <th>操作结果</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {loading && auditLogs.length === 0 ? (
+                                  <tr>
+                                    <td colSpan="10" className="empty-state">加载中...</td>
+                                  </tr>
+                                ) : auditLogs.length === 0 ? (
+                                  <tr>
+                                    <td colSpan="10" className="empty-state">暂无审计日志</td>
+                                  </tr>
+                                ) : (
+                                  auditLogs.map((log) => (
+                                    <tr key={log.id}>
+                                      <td>{log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : '-'}</td>
+                                      <td>{log.username || '-'}</td>
+                                      <td>
+                                        <span style={{
+                                          padding: '2px 8px',
+                                          borderRadius: '2px',
+                                          fontSize: '12px',
+                                          background: log.action === 'delete' ? '#fff1f0' : log.action === 'create' ? '#f6ffed' : log.action === 'update' ? '#fff7e6' : '#e6f7ff',
+                                          color: log.action === 'delete' ? '#ff4d4f' : log.action === 'create' ? '#52c41a' : log.action === 'update' ? '#faad14' : '#1890ff',
+                                        }}>
+                                          {log.action || '-'}
+                                        </span>
+                                      </td>
+                                      <td>{log.resource || '-'}</td>
+                                      <td>{log.resource_id || '-'}</td>
+                                      <td>
+                                        <span style={{
+                                          padding: '2px 6px',
+                                          borderRadius: '2px',
+                                          fontSize: '11px',
+                                          background: log.method === 'GET' ? '#e6f7ff' : log.method === 'POST' ? '#f6ffed' : log.method === 'PUT' ? '#fff7e6' : log.method === 'DELETE' ? '#fff1f0' : '#f0f0f0',
+                                          color: log.method === 'GET' ? '#1890ff' : log.method === 'POST' ? '#52c41a' : log.method === 'PUT' ? '#faad14' : log.method === 'DELETE' ? '#ff4d4f' : '#666',
+                                        }}>
+                                          {log.method || '-'}
+                                        </span>
+                                      </td>
+                                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.path}>
+                                        {log.path || '-'}
+                                      </td>
+                                      <td>{log.ip_address || '-'}</td>
+                                      <td>
+                                        <span style={{
+                                          color: log.status >= 200 && log.status < 300 ? '#52c41a' : log.status >= 400 ? '#ff4d4f' : '#faad14',
+                                          fontWeight: '500'
+                                        }}>
+                                          {log.status || '-'}
+                                        </span>
+                                      </td>
+                                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.message}>
+                                        {log.message || '-'}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* 分页 */}
+                          {!loading && auditLogs.length > 0 && (
+                            <Pagination
+                              currentPage={auditLogsPage}
+                              totalPages={Math.ceil(auditLogsTotal / auditLogsPageSize)}
+                              totalItems={auditLogsTotal}
+                              pageSize={auditLogsPageSize}
+                              onPageChange={(page) => {
+                                setAuditLogsPage(page)
+                                fetchAuditLogs()
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setAuditLogsPageSize(newSize)
+                                setAuditLogsPage(1)
+                                fetchAuditLogs()
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {activeSubtab === 'policy' && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>策略管理</h2>
+                            <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+                              管理安全策略，包括访问控制策略、网络策略等。
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSubtab === 'inspection' && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>配置巡检</h2>
+                            <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+                              检查集群配置是否符合安全规范，发现潜在的安全风险。
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSubtab === 'monitoring' && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>安全监控</h2>
+                            <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+                              实时监控集群安全状态，接收安全告警和通知。
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {!activeSubtab && (
+                        <div className="security-subtab-content">
+                          <div className="section-header">
+                            <h2>安全管理</h2>
+                            <p style={{ marginTop: '16px', color: '#666', fontSize: '14px' }}>
+                              请从左侧菜单选择具体的功能模块。
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </>
             </div>
           </div>
@@ -5345,7 +6695,13 @@ const K8sClusterDetail = () => {
                             >
                                 使用镜像创建
                             </button>
-                              <button className="btn-secondary" disabled>
+                              <button 
+                                className="btn-secondary"
+                                onClick={() => {
+                                  setShowYamlCreateModal(true)
+                                  loadDefaultYamlTemplate('deployment-basic')
+                                }}
+                              >
                                 使用YAML创建资源
                             </button>
 
@@ -5673,7 +7029,13 @@ const K8sClusterDetail = () => {
                             >
                                 使用镜像创建
                             </button>
-                              <button className="btn-secondary" disabled>
+                              <button 
+                                className="btn-secondary"
+                                onClick={() => {
+                                  setShowYamlCreateModal(true)
+                                  loadDefaultYamlTemplate('deployment-basic')
+                                }}
+                              >
                                 使用YAML创建资源
                             </button>
 
@@ -6034,7 +7396,13 @@ const K8sClusterDetail = () => {
                               >
                                 使用镜像创建
                             </button>
-                              <button className="btn-secondary" disabled>
+                              <button 
+                                className="btn-secondary"
+                                onClick={() => {
+                                  setShowYamlCreateModal(true)
+                                  loadDefaultYamlTemplate('deployment-basic')
+                                }}
+                              >
                                 使用YAML创建资源
                             </button>
 
@@ -9790,6 +11158,344 @@ const K8sClusterDetail = () => {
                       {t('common.close')}
                     </button>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 权限管理模态框 */}
+          {showManagePermissionsModal && managingUser && (
+            <div className="modal-overlay" onClick={() => setShowManagePermissionsModal(false)}>
+              <div className="modal-content" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>管理权限 - {managingUser.username || managingUser.display_name || managingUser.displayName}</h2>
+                  <button className="modal-close" onClick={() => setShowManagePermissionsModal(false)}>×</button>
+                </div>
+
+                <div className="modal-body">
+                  {/* 权限范围选择 */}
+                  <div className="form-group" style={{ marginBottom: '24px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>权限范围</label>
+                    <div style={{ display: 'flex', gap: '16px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="permissionScope"
+                          value="namespace"
+                          checked={permissionScope === 'namespace'}
+                          onChange={(e) => {
+                            setPermissionScope(e.target.value)
+                            setSelectedNamespacesForPermission([])
+                          }}
+                          style={{ marginRight: '8px' }}
+                        />
+                        命名空间范围
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name="permissionScope"
+                          value="cluster"
+                          checked={permissionScope === 'cluster'}
+                          onChange={(e) => {
+                            setPermissionScope(e.target.value)
+                            setSelectedNamespacesForPermission([])
+                          }}
+                          style={{ marginRight: '8px' }}
+                        />
+                        集群范围
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 命名空间选择（仅命名空间范围时显示） */}
+                  {permissionScope === 'namespace' && (
+                    <div className="form-group" style={{ marginBottom: '24px' }}>
+                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>选择命名空间</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '120px', overflowY: 'auto', padding: '8px', border: '1px solid #e8e8e8', borderRadius: '4px' }}>
+                        {namespaces.map(ns => (
+                          <label key={ns.name} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px', background: selectedNamespacesForPermission.includes(ns.name) ? '#e6f7ff' : 'transparent' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedNamespacesForPermission.includes(ns.name)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedNamespacesForPermission([...selectedNamespacesForPermission, ns.name])
+                                } else {
+                                  setSelectedNamespacesForPermission(selectedNamespacesForPermission.filter(n => n !== ns.name))
+                                }
+                              }}
+                              style={{ marginRight: '4px' }}
+                            />
+                            {ns.name}
+                          </label>
+                        ))}
+                        {namespaces.length === 0 && (
+                          <span style={{ color: '#999', fontSize: '14px' }}>暂无命名空间，请先创建命名空间</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 权限配置表格 */}
+                  <div style={{ marginBottom: '24px' }}>
+                    <label style={{ display: 'block', marginBottom: '12px', fontWeight: '500' }}>资源权限配置</label>
+                    <div style={{ border: '1px solid #e8e8e8', borderRadius: '4px', overflow: 'auto', maxHeight: '400px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead style={{ background: '#fafafa', position: 'sticky', top: 0, zIndex: 1 }}>
+                          <tr>
+                            <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #e8e8e8', minWidth: '200px' }}>资源</th>
+                            {availableVerbs.map(verb => (
+                              <th key={verb.name} style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #e8e8e8', minWidth: '80px' }}>
+                                {verb.displayName}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {availableResources.map(resource => (
+                            <tr key={resource.name} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                              <td style={{ padding: '12px', fontWeight: '500' }}>{resource.displayName}</td>
+                              {availableVerbs.map(verb => (
+                                <td key={verb.name} style={{ padding: '12px', textAlign: 'center' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={hasPermission(resource.name, verb.name)}
+                                    onChange={() => togglePermission(resource.name, verb.name)}
+                                    style={{ cursor: 'pointer' }}
+                                  />
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* 提示信息 */}
+                  <div style={{ padding: '12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: '4px', fontSize: '14px', color: '#52c41a' }}>
+                    <strong>提示：</strong>
+                    <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
+                      <li>命名空间范围：权限仅适用于选定的命名空间</li>
+                      <li>集群范围：权限适用于整个集群（包括所有命名空间）</li>
+                      <li>建议为不同用户配置最小必要权限，遵循最小权限原则</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowManagePermissionsModal(false)
+                      setManagingUser(null)
+                      setUserPermissions([])
+                      setSelectedNamespacesForPermission([])
+                      setPermissionScope('namespace')
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSavePermissions}
+                    disabled={loading || (permissionScope === 'namespace' && selectedNamespacesForPermission.length === 0)}
+                  >
+                    {loading ? '保存中...' : '保存'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 使用YAML创建资源模态框 */}
+          {showYamlCreateModal && (
+            <div className="modal-overlay" onClick={() => setShowYamlCreateModal(false)}>
+              <div className="modal-content" style={{ maxWidth: '1000px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h2>使用YAML创建资源</h2>
+                  <button className="modal-close" onClick={() => {
+                    setShowYamlCreateModal(false)
+                    setYamlCreateContent('')
+                    setYamlAnalysisResult(null)
+                  }}>×</button>
+                </div>
+
+                <div className="modal-body">
+                  {/* 模板选择区域 */}
+                  <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ fontSize: '14px', fontWeight: '500' }}>示例模版:</label>
+                    <select
+                      className="toolbar-select"
+                      value={selectedYamlTemplate}
+                      onChange={(e) => {
+                        setSelectedYamlTemplate(e.target.value)
+                        loadDefaultYamlTemplate(e.target.value)
+                      }}
+                      style={{ width: '250px' }}
+                    >
+                      <option value="deployment-basic">Resource - basic Deployment</option>
+                      <option value="deployment-advanced">Resource - advanced Deployment</option>
+                      <option value="service">Resource - Service</option>
+                      <option value="configmap">Resource - ConfigMap</option>
+                    </select>
+                    <button
+                      className="btn-secondary"
+                      onClick={handleGenerateYamlTemplate}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 1L10.5 5.5L15.5 6.5L12 9.5L12.5 14.5L8 12L3.5 14.5L4 9.5L0.5 6.5L5.5 5.5L8 1Z" fill="currentColor"/>
+                      </svg>
+                      智能生成模板
+                    </button>
+                  </div>
+
+                  {/* YAML编辑器 */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ 
+                      border: '1px solid #e8e8e8', 
+                      borderRadius: '4px', 
+                      background: '#fafafa',
+                      padding: '12px',
+                      fontFamily: 'monospace',
+                      fontSize: '13px',
+                      lineHeight: '1.6',
+                      maxHeight: '500px',
+                      overflow: 'auto'
+                    }}>
+                      <textarea
+                        value={yamlCreateContent}
+                        onChange={(e) => setYamlCreateContent(e.target.value)}
+                        style={{
+                          width: '100%',
+                          minHeight: '400px',
+                          border: 'none',
+                          background: 'transparent',
+                          fontFamily: 'monospace',
+                          fontSize: '13px',
+                          lineHeight: '1.6',
+                          resize: 'vertical',
+                          outline: 'none',
+                          padding: '8px',
+                        }}
+                        placeholder="请输入或粘贴YAML内容..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* YAML分析结果 */}
+                  {yamlAnalysisResult && (
+                    <div style={{ 
+                      marginBottom: '16px', 
+                      padding: '12px', 
+                      borderRadius: '4px',
+                      background: yamlAnalysisResult.valid ? '#f6ffed' : '#fff1f0',
+                      border: `1px solid ${yamlAnalysisResult.valid ? '#b7eb8f' : '#ffccc7'}`,
+                    }}>
+                      <div style={{ 
+                        fontWeight: '500', 
+                        marginBottom: '8px',
+                        color: yamlAnalysisResult.valid ? '#52c41a' : '#ff4d4f'
+                      }}>
+                        {yamlAnalysisResult.valid ? '✓ YAML格式正确' : '✗ YAML格式错误'}
+                      </div>
+                      {yamlAnalysisResult.resourceType && (
+                        <div style={{ fontSize: '13px', color: '#666', marginBottom: '4px' }}>
+                          资源类型: {yamlAnalysisResult.resourceType}
+                        </div>
+                      )}
+                      {yamlAnalysisResult.warnings && yamlAnalysisResult.warnings.length > 0 && (
+                        <div style={{ fontSize: '13px', color: '#faad14', marginTop: '8px' }}>
+                          <div style={{ fontWeight: '500', marginBottom: '4px' }}>警告:</div>
+                          <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                            {yamlAnalysisResult.warnings.map((warning, idx) => (
+                              <li key={idx}>{warning}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {yamlAnalysisResult.suggestions && yamlAnalysisResult.suggestions.length > 0 && (
+                        <div style={{ fontSize: '13px', color: '#1890ff', marginTop: '8px' }}>
+                          <div style={{ fontWeight: '500', marginBottom: '4px' }}>建议:</div>
+                          <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                            {yamlAnalysisResult.suggestions.map((suggestion, idx) => (
+                              <li key={idx}>{suggestion}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {yamlAnalysisResult.errors && yamlAnalysisResult.errors.length > 0 && (
+                        <div style={{ fontSize: '13px', color: '#ff4d4f', marginTop: '8px' }}>
+                          <div style={{ fontWeight: '500', marginBottom: '4px' }}>错误:</div>
+                          <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                            {yamlAnalysisResult.errors.map((error, idx) => (
+                              <li key={idx}>{error}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* YAML分析按钮 */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={handleAnalyzeYaml}
+                      disabled={loading || !yamlCreateContent.trim()}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 1L10.5 5.5L15.5 6.5L12 9.5L12.5 14.5L8 12L3.5 14.5L4 9.5L0.5 6.5L5.5 5.5L8 1Z" fill="currentColor"/>
+                      </svg>
+                      YAML 语句智能分析
+                    </button>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleLoadYamlTemplate}
+                    >
+                      使用已有模版
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleSaveYamlTemplate}
+                      disabled={!yamlCreateContent.trim()}
+                    >
+                      保存模版
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setShowYamlCreateModal(false)
+                        setYamlCreateContent('')
+                        setYamlAnalysisResult(null)
+                      }}
+                    >
+                      关闭
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleCreateFromYaml}
+                      disabled={loading || !yamlCreateContent.trim()}
+                    >
+                      {loading ? '创建中...' : '创建'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

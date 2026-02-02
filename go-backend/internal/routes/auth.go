@@ -186,6 +186,15 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				k8s.GET("/clusters/:id/jobs", k8sHandler.GetJobs)
 				k8s.GET("/clusters/:id/cronjobs", k8sHandler.GetCronJobs)
 				k8s.POST("/clusters/:id/workloads/create", k8sHandler.CreateWorkloadFromYAML)
+
+				// RBAC授权管理
+				k8s.GET("/clusters/:id/rbac/ram-users", k8sHandler.GetRAMUsers)
+				k8s.GET("/clusters/:id/rbac/ram-roles", k8sHandler.GetRAMRoles)
+				k8s.GET("/clusters/:id/rbac/kubeconfigs", k8sHandler.GetKubeconfigs)
+				k8s.GET("/clusters/:id/rbac/users/:userId/permissions", k8sHandler.GetUserPermissions)
+				k8s.GET("/clusters/:id/rbac/roles/:roleId/permissions", k8sHandler.GetRolePermissions)
+				k8s.POST("/clusters/:id/rbac/users/:userId/permissions", k8sHandler.SaveUserPermissions)
+				k8s.POST("/clusters/:id/rbac/roles/:roleId/permissions", k8sHandler.SaveRolePermissions)
 			}
 		}
 	}

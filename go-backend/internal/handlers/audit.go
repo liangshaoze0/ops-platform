@@ -19,13 +19,14 @@ func NewAuditHandler(db *gorm.DB) *AuditHandler {
 // GetAuditLogs 获取审计日志列表（管理员）
 func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 	var req struct {
-		Page     int    `form:"page" binding:"omitempty,min=1"`
-		PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
-		Action   string `form:"action"`
-		Resource string `form:"resource"`
-		Username string `form:"username"`
+		Page      int    `form:"page" binding:"omitempty,min=1"`
+		PageSize  int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+		Action    string `form:"action"`
+		Resource  string `form:"resource"`
+		Username  string `form:"username"`
 		StartDate string `form:"start_date"`
 		EndDate   string `form:"end_date"`
+		ClusterID string `form:"cluster_id"`
 	}
 
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -58,6 +59,10 @@ func (h *AuditHandler) GetAuditLogs(c *gin.Context) {
 	}
 	if req.EndDate != "" {
 		query = query.Where("created_at <= ?", req.EndDate)
+	}
+	if req.ClusterID != "" {
+		// 如果路径包含集群ID，也进行过滤
+		query = query.Where("path LIKE ?", "%/clusters/"+req.ClusterID+"/%")
 	}
 
 	// 获取总数
