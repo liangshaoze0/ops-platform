@@ -145,6 +145,7 @@ func SetupRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config) {
 				k8s.PUT("/clusters/:id/namespaces/:namespace/pods/:podName/annotations", k8sHandler.UpdatePodAnnotations)
 				k8s.POST("/clusters/:id/namespaces/:namespace/pods/:podName/restart", k8sHandler.RestartPod)
 				k8s.GET("/clusters/:id/services", k8sHandler.GetServices)
+				k8s.GET("/clusters/:id/ingresses", k8sHandler.GetIngresses)
 				k8s.GET("/clusters/:id/configmaps", k8sHandler.GetConfigMaps)
 				k8s.GET("/clusters/:id/secrets", k8sHandler.GetSecrets)
 				k8s.GET("/clusters/:id/pvcs", k8sHandler.GetPVCs)

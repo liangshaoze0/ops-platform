@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -25,10 +26,10 @@ import (
 
 // Client K8s客户端封装
 type Client struct {
-	clientset    *kubernetes.Clientset
-	config       *rest.Config
-	dynamicClient dynamic.Interface
-	discoveryClient discovery.CachedDiscoveryInterface
+	clientset           *kubernetes.Clientset
+	config              *rest.Config
+	dynamicClient       dynamic.Interface
+	discoveryClient     discovery.CachedDiscoveryInterface
 	autoscalingV2Client autoscalingv2client.AutoscalingV2Interface
 }
 
@@ -66,7 +67,7 @@ func NewClientFromConfig(kubeconfig string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("创建发现客户端失败: %w", err)
 	}
-	
+
 	// 创建cached discovery client以支持restmapper
 	cachedDiscoveryClient := memory.NewMemCacheClient(discoveryClient)
 
@@ -74,10 +75,10 @@ func NewClientFromConfig(kubeconfig string) (*Client, error) {
 	autoscalingV2Client := clientset.AutoscalingV2()
 
 	return &Client{
-		clientset:      clientset,
-		config:         config,
-		dynamicClient:  dynamicClient,
-		discoveryClient: cachedDiscoveryClient,
+		clientset:           clientset,
+		config:              config,
+		dynamicClient:       dynamicClient,
+		discoveryClient:     cachedDiscoveryClient,
 		autoscalingV2Client: autoscalingV2Client,
 	}, nil
 }
@@ -307,6 +308,21 @@ func (c *Client) GetServices(ctx context.Context, namespace string) ([]corev1.Se
 	return services.Items, nil
 }
 
+// GetIngresses 获取Ingress列表（可选命名空间）
+func (c *Client) GetIngresses(ctx context.Context, namespace string) ([]networkingv1.Ingress, error) {
+	var ingresses *networkingv1.IngressList
+	var err error
+	if namespace == "" {
+		ingresses, err = c.clientset.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
+	} else {
+		ingresses, err = c.clientset.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("获取Ingress列表失败: %w", err)
+	}
+	return ingresses.Items, nil
+}
+
 // GetConfigMaps 获取ConfigMap列表（可选命名空间）
 func (c *Client) GetConfigMaps(ctx context.Context, namespace string) ([]corev1.ConfigMap, error) {
 	var configMaps *corev1.ConfigMapList
@@ -378,15 +394,15 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, podName, containerNa
 	if containerName != "" {
 		opts.Container = containerName
 	}
-	
+
 	req := c.clientset.CoreV1().Pods(namespace).GetLogs(podName, opts)
-	
+
 	logs, err := req.Stream(ctx)
 	if err != nil {
 		return "", fmt.Errorf("获取Pod日志失败: %w", err)
 	}
 	defer logs.Close()
-	
+
 	buf := make([]byte, 4096)
 	var result []byte
 	for {
@@ -401,7 +417,7 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, podName, containerNa
 			return "", fmt.Errorf("读取日志失败: %w", err)
 		}
 	}
-	
+
 	return string(result), nil
 }
 
@@ -445,16 +461,16 @@ func (c *Client) ScaleDeployment(ctx context.Context, namespace, name string, re
 	if err != nil {
 		return fmt.Errorf("获取Deployment失败: %w", err)
 	}
-	
+
 	// 更新副本数
 	deployment.Spec.Replicas = &replicas
-	
+
 	// 更新Deployment
 	_, err = c.clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("更新Deployment失败: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -481,7 +497,7 @@ func (c *Client) GetPodsBySelector(ctx context.Context, namespace string, select
 	if err != nil {
 		return nil, fmt.Errorf("构建selector失败: %w", err)
 	}
-	
+
 	var pods *corev1.PodList
 	if namespace == "" {
 		pods, err = c.clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
@@ -538,16 +554,16 @@ func (c *Client) ScaleStatefulSet(ctx context.Context, namespace, name string, r
 	if err != nil {
 		return fmt.Errorf("获取StatefulSet失败: %w", err)
 	}
-	
+
 	// 更新副本数
 	statefulSet.Spec.Replicas = &replicas
-	
+
 	// 更新StatefulSet
 	_, err = c.clientset.AppsV1().StatefulSets(namespace).Update(ctx, statefulSet, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("更新StatefulSet失败: %w", err)
 	}
-	
+
 	return nil
 }
 

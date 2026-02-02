@@ -164,11 +164,39 @@ const Sidebar = () => {
               path: `/k8s/cluster/${clusterId}?tab=network`,
               label: t('k8s.network'),
               tab: 'network',
+              children: [
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=network&networkSubtab=services`,
+                  label: '服务',
+                  tab: 'network',
+                  networkSubtab: 'services',
+                },
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=network&networkSubtab=ingress`,
+                  label: '路由',
+                  tab: 'network',
+                  networkSubtab: 'ingress',
+                },
+              ],
             },
             {
               path: `/k8s/cluster/${clusterId}?tab=config`,
               label: t('k8s.configManagement'),
               tab: 'config',
+              children: [
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=config&configSubtab=configmaps`,
+                  label: '配置项',
+                  tab: 'config',
+                  configSubtab: 'configmaps',
+                },
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=config&configSubtab=secrets`,
+                  label: '保密字典',
+                  tab: 'config',
+                  configSubtab: 'secrets',
+                },
+              ],
             },
             {
               path: `/k8s/cluster/${clusterId}?tab=storage`,
@@ -262,6 +290,8 @@ const Sidebar = () => {
                   const currentTab = searchParams.get('tab')
                   const currentType = searchParams.get('type')
                   const currentSubtab = searchParams.get('subtab')
+                  const currentNetworkSubtab = searchParams.get('networkSubtab')
+                  const currentConfigSubtab = searchParams.get('configSubtab')
                   if (grandchild.tab === currentTab) {
                     // 如果有 type 参数，检查 type 匹配
                     if (currentType) {
@@ -273,8 +303,18 @@ const Sidebar = () => {
                       if (grandchild.children.some(gc => gc.subtab === currentSubtab)) {
                         setExpandedSubMenus((prev) => ({ ...prev, [grandchild.path]: true }))
                       }
+                    } else if (currentNetworkSubtab) {
+                      // 如果有 networkSubtab 参数，检查 networkSubtab 匹配
+                      if (grandchild.children.some(gc => gc.networkSubtab === currentNetworkSubtab)) {
+                        setExpandedSubMenus((prev) => ({ ...prev, [grandchild.path]: true }))
+                      }
+                    } else if (currentConfigSubtab) {
+                      // 如果有 configSubtab 参数，检查 configSubtab 匹配
+                      if (grandchild.children && grandchild.children.some(gc => gc.configSubtab === currentConfigSubtab)) {
+                        setExpandedSubMenus((prev) => ({ ...prev, [grandchild.path]: true }))
+                      }
                     } else {
-                      // 没有 type 或 subtab 参数，但 tab 匹配，也展开
+                      // 没有 type、subtab 或 networkSubtab 参数，但 tab 匹配，也展开
                       setExpandedSubMenus((prev) => ({ ...prev, [grandchild.path]: true }))
                     }
                   }
@@ -314,7 +354,8 @@ const Sidebar = () => {
         // 检查是否有四级菜单
         if (child.children[0]?.children) {
           const currentSubtab = searchParams.get('subtab')
-          // 四级菜单：检查type或subtab参数
+          const currentNetworkSubtab = searchParams.get('networkSubtab')
+          // 四级菜单：检查type、subtab或networkSubtab参数
           return child.children.some((grandchild) => {
             if (grandchild.children) {
               return grandchild.children.some((greatGrandchild) => {
@@ -322,6 +363,8 @@ const Sidebar = () => {
                   return greatGrandchild.type === currentType
                 } else if (currentSubtab) {
                   return greatGrandchild.subtab === currentSubtab
+                } else if (currentNetworkSubtab) {
+                  return greatGrandchild.networkSubtab === currentNetworkSubtab
                 }
                 return false
               })
@@ -332,7 +375,15 @@ const Sidebar = () => {
         
         // 三级菜单：检查tab参数
         return child.children.some((grandchild) => {
-          return grandchild.tab === currentTab || (!currentTab && grandchild.tab === 'info')
+          if (grandchild.tab === currentTab || (!currentTab && grandchild.tab === 'info')) {
+            // 如果有 networkSubtab 参数，需要进一步检查
+            if (grandchild.networkSubtab) {
+              const currentNetworkSubtab = searchParams.get('networkSubtab') || 'services'
+              return grandchild.networkSubtab === currentNetworkSubtab
+            }
+            return true
+          }
+          return false
         })
       }
       return pathMatch
@@ -434,6 +485,7 @@ const Sidebar = () => {
                         const currentTab = searchParams.get('tab') || 'info'
                         const currentType = searchParams.get('type')
                         const currentSubtab = searchParams.get('subtab')
+                        const currentNetworkSubtab = searchParams.get('networkSubtab')
                         
                         return (
                           <li key={child.path} className={`submenu-item ${hasGrandchildren ? 'submenu-item-parent' : ''}`}>
@@ -504,6 +556,9 @@ const Sidebar = () => {
                                                   } else if (greatGrandchild.subtab) {
                                                     // 使用 subtab 参数匹配（security）
                                                     isGreatGrandchildActive = greatGrandchild.subtab === currentSubtab && isGrandchildActive
+                                                  } else if (greatGrandchild.networkSubtab) {
+                                                    // 使用 networkSubtab 参数匹配（network）
+                                                    isGreatGrandchildActive = greatGrandchild.networkSubtab === currentNetworkSubtab && isGrandchildActive
                                                   }
                                                   return (
                                                     <li key={greatGrandchild.path} className="subsubsubmenu-item">
@@ -523,7 +578,12 @@ const Sidebar = () => {
                                       }
                                       
                                       // 三级菜单项（无四级菜单）
-                                      const isGrandchildActive = grandchild.tab === currentTab && isChildActive
+                                      let isGrandchildActive = grandchild.tab === currentTab && isChildActive
+                                      // 检查 networkSubtab 参数
+                                      if (grandchild.networkSubtab) {
+                                        const currentNetworkSubtab = searchParams.get('networkSubtab') || 'services'
+                                        isGrandchildActive = grandchild.networkSubtab === currentNetworkSubtab && isChildActive
+                                      }
                                       return (
                                         <li key={grandchild.path} className="subsubmenu-item">
                                           <Link

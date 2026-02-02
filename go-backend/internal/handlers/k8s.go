@@ -16,8 +16,8 @@ import (
 	"gorm.io/gorm"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -27,7 +27,7 @@ func paginateSlice(data []map[string]interface{}, page, pageSize int) ([]map[str
 	total := int64(len(data))
 	start := (page - 1) * pageSize
 	end := start + pageSize
-	
+
 	if start > len(data) {
 		return []map[string]interface{}{}, total
 	} else if end > len(data) {
@@ -319,7 +319,7 @@ func (h *K8sHandler) TestConnection(c *gin.Context) {
 	client, err := k8s.NewClientFromConfig(cluster.Config)
 	if err != nil {
 		h.db.Model(&cluster).Updates(map[string]interface{}{
-			"status":       "error",
+			"status":        "error",
 			"last_check_at": gorm.Expr("NOW()"),
 		})
 		utils.BadRequest(c, "连接失败: "+err.Error())
@@ -331,7 +331,7 @@ func (h *K8sHandler) TestConnection(c *gin.Context) {
 
 	if err := client.TestConnection(ctx); err != nil {
 		h.db.Model(&cluster).Updates(map[string]interface{}{
-			"status":       "error",
+			"status":        "error",
 			"last_check_at": gorm.Expr("NOW()"),
 		})
 		utils.BadRequest(c, "连接测试失败: "+err.Error())
@@ -340,7 +340,7 @@ func (h *K8sHandler) TestConnection(c *gin.Context) {
 
 	// 更新集群状态
 	h.db.Model(&cluster).Updates(map[string]interface{}{
-		"status":       "connected",
+		"status":        "connected",
 		"last_check_at": gorm.Expr("NOW()"),
 	})
 
@@ -647,9 +647,9 @@ func (h *K8sHandler) CreateNamespace(c *gin.Context) {
 	}
 
 	var req struct {
-		Name              string            `json:"name" binding:"required"`
-		DeletionProtection bool             `json:"deletionProtection"`
-		Labels            map[string]string `json:"labels"`
+		Name               string            `json:"name" binding:"required"`
+		DeletionProtection bool              `json:"deletionProtection"`
+		Labels             map[string]string `json:"labels"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -671,7 +671,7 @@ func (h *K8sHandler) CreateNamespace(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	
+
 	// 如果 labels 为 nil，初始化为空 map
 	if req.Labels == nil {
 		req.Labels = make(map[string]string)
@@ -717,9 +717,9 @@ func (h *K8sHandler) UpdateNamespace(c *gin.Context) {
 	}
 
 	var req struct {
-		Name              string            `json:"name" binding:"required"`
-		DeletionProtection bool             `json:"deletionProtection"`
-		Labels            map[string]string `json:"labels"`
+		Name               string            `json:"name" binding:"required"`
+		DeletionProtection bool              `json:"deletionProtection"`
+		Labels             map[string]string `json:"labels"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -747,7 +747,7 @@ func (h *K8sHandler) UpdateNamespace(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	
+
 	// 如果 labels 为 nil，初始化为空 map
 	if req.Labels == nil {
 		req.Labels = make(map[string]string)
@@ -931,22 +931,22 @@ func (h *K8sHandler) CreateDeployment(c *gin.Context) {
 	}
 
 	type ContainerConfig struct {
-		Name                    string        `json:"name"`
-		Image                   string        `json:"image" binding:"required"`
-		ImagePullPolicy         string        `json:"imagePullPolicy"`
-		ImageSecret             string        `json:"imageSecret"`
-		CpuLimit                string        `json:"cpuLimit"`
-		MemoryLimit             string        `json:"memoryLimit"`
-		EphemeralStorageLimit   string        `json:"ephemeralStorageLimit"`
-		GpuType                 string        `json:"gpuType"`
-		CpuRequest              string        `json:"cpuRequest"`
-		MemoryRequest           string        `json:"memoryRequest"`
-		EphemeralStorageRequest string        `json:"ephemeralStorageRequest"`
-		Stdin                   bool          `json:"stdin"`
-		Tty                     bool          `json:"tty"`
-		Privileged              bool          `json:"privileged"`
-		InitContainer           bool          `json:"initContainer"`
-		Ports                   []PortConfig  `json:"ports"`
+		Name                    string         `json:"name"`
+		Image                   string         `json:"image" binding:"required"`
+		ImagePullPolicy         string         `json:"imagePullPolicy"`
+		ImageSecret             string         `json:"imageSecret"`
+		CpuLimit                string         `json:"cpuLimit"`
+		MemoryLimit             string         `json:"memoryLimit"`
+		EphemeralStorageLimit   string         `json:"ephemeralStorageLimit"`
+		GpuType                 string         `json:"gpuType"`
+		CpuRequest              string         `json:"cpuRequest"`
+		MemoryRequest           string         `json:"memoryRequest"`
+		EphemeralStorageRequest string         `json:"ephemeralStorageRequest"`
+		Stdin                   bool           `json:"stdin"`
+		Tty                     bool           `json:"tty"`
+		Privileged              bool           `json:"privileged"`
+		InitContainer           bool           `json:"initContainer"`
+		Ports                   []PortConfig   `json:"ports"`
 		EnvVars                 []EnvVarConfig `json:"envVars"`
 	}
 
@@ -1172,13 +1172,51 @@ func (h *K8sHandler) GetPods(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	
+
 	pods, err := client.GetPods(ctx, req.Namespace)
 	if err != nil {
 		utils.InternalServerError(c, "获取Pod列表失败: "+err.Error())
 		return
+	}
+
+	// 批量获取所有节点信息，避免为每个 Pod 都调用 GetNode
+	// 一次性获取所有节点，然后构建节点IP映射
+	nodeIPMap := make(map[string]map[string]string) // nodeName -> {nodeIP, nodeInternalIP, nodeExternalIP}
+	nodeNames := make(map[string]bool)
+	for _, pod := range pods {
+		if pod.Spec.NodeName != "" {
+			nodeNames[pod.Spec.NodeName] = true
+		}
+	}
+
+	// 如果有需要查询的节点，一次性获取所有节点信息
+	if len(nodeNames) > 0 {
+		allNodes, err := client.GetNodes(ctx)
+		if err == nil {
+			// 构建节点IP映射
+			for _, node := range allNodes {
+				if nodeNames[node.Name] {
+					nodeInfo := make(map[string]string)
+					for _, addr := range node.Status.Addresses {
+						switch addr.Type {
+						case corev1.NodeInternalIP:
+							nodeInfo["nodeInternalIP"] = addr.Address
+						case corev1.NodeExternalIP:
+							nodeInfo["nodeExternalIP"] = addr.Address
+						}
+					}
+					// 优先使用内部IP，如果没有则使用外部IP
+					if nodeInfo["nodeInternalIP"] != "" {
+						nodeInfo["nodeIP"] = nodeInfo["nodeInternalIP"]
+					} else if nodeInfo["nodeExternalIP"] != "" {
+						nodeInfo["nodeIP"] = nodeInfo["nodeExternalIP"]
+					}
+					nodeIPMap[node.Name] = nodeInfo
+				}
+			}
+		}
 	}
 
 	// 转换为简化的Pod信息
@@ -1189,34 +1227,22 @@ func (h *K8sHandler) GetPods(c *gin.Context) {
 		for _, container := range pod.Spec.Containers {
 			images = append(images, container.Image)
 		}
-		
+
 		// 获取更新时间（使用StartTime或CreationTimestamp）
 		updatedAt := pod.CreationTimestamp.Time
 		if pod.Status.StartTime != nil {
 			updatedAt = pod.Status.StartTime.Time
 		}
 
-		// 获取节点IP（如果节点名称存在，尝试获取节点信息）
+		// 从缓存中获取节点IP
 		nodeIP := ""
 		nodeInternalIP := ""
 		nodeExternalIP := ""
 		if pod.Spec.NodeName != "" {
-			node, err := client.GetNode(ctx, pod.Spec.NodeName)
-			if err == nil {
-				for _, addr := range node.Status.Addresses {
-					switch addr.Type {
-					case corev1.NodeInternalIP:
-						nodeInternalIP = addr.Address
-					case corev1.NodeExternalIP:
-						nodeExternalIP = addr.Address
-					}
-				}
-				// 优先使用内部IP，如果没有则使用外部IP
-				if nodeInternalIP != "" {
-					nodeIP = nodeInternalIP
-				} else if nodeExternalIP != "" {
-					nodeIP = nodeExternalIP
-				}
+			if nodeInfo, ok := nodeIPMap[pod.Spec.NodeName]; ok {
+				nodeIP = nodeInfo["nodeIP"]
+				nodeInternalIP = nodeInfo["nodeInternalIP"]
+				nodeExternalIP = nodeInfo["nodeExternalIP"]
 			}
 		}
 
@@ -1236,25 +1262,25 @@ func (h *K8sHandler) GetPods(c *gin.Context) {
 
 		// 安全处理Pod信息
 		podInfo := map[string]interface{}{
-			"name":         pod.Name,
-			"namespace":    pod.Namespace,
-			"status":       string(pod.Status.Phase),
-			"node":         pod.Spec.NodeName,
-			"nodeIP":       nodeIP,
+			"name":           pod.Name,
+			"namespace":      pod.Namespace,
+			"status":         string(pod.Status.Phase),
+			"node":           pod.Spec.NodeName,
+			"nodeIP":         nodeIP,
 			"nodeInternalIP": nodeInternalIP,
 			"nodeExternalIP": nodeExternalIP,
-			"podIP":        pod.Status.PodIP,
-			"restarts":     getPodRestartCount(&pod),
-			"age":          getPodAge(pod.CreationTimestamp.Time),
-			"created_at":   pod.CreationTimestamp.Time,
-			"updated_at":   updatedAt,
-			"labels":       pod.Labels,
-			"annotations":  pod.Annotations,
-			"containers":  len(pod.Spec.Containers),
-			"images":       images,
-			"ready":        getPodReadyStatus(&pod),
-			"cpuRequest":   cpuRequest,
-			"memoryRequest": memoryRequest,
+			"podIP":          pod.Status.PodIP,
+			"restarts":       getPodRestartCount(&pod),
+			"age":            getPodAge(pod.CreationTimestamp.Time),
+			"created_at":     pod.CreationTimestamp.Time,
+			"updated_at":     updatedAt,
+			"labels":         pod.Labels,
+			"annotations":    pod.Annotations,
+			"containers":     len(pod.Spec.Containers),
+			"images":         images,
+			"ready":          getPodReadyStatus(&pod),
+			"cpuRequest":     cpuRequest,
+			"memoryRequest":  memoryRequest,
 		}
 		podList = append(podList, podInfo)
 	}
@@ -1309,7 +1335,7 @@ func (h *K8sHandler) RestartPod(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	
+
 	// 删除Pod以触发重启（Deployment/StatefulSet会自动重新创建）
 	err = client.DeletePod(ctx, namespace, podName)
 	if err != nil {
@@ -1433,10 +1459,10 @@ func (h *K8sHandler) UpdatePodYAML(c *gin.Context) {
 	// - spec.activeDeadlineSeconds
 	// - spec.tolerations (只能添加)
 	// - spec.terminationGracePeriodSeconds (如果之前是负数，允许设置为1)
-	
+
 	// 创建新的Pod对象，从现有Pod复制所有字段
 	finalPod := existingPod.DeepCopy()
-	
+
 	// 只更新允许的字段
 	// 1. 更新容器镜像
 	if len(updatedPod.Spec.Containers) > 0 {
@@ -1446,7 +1472,7 @@ func (h *K8sHandler) UpdatePodYAML(c *gin.Context) {
 			}
 		}
 	}
-	
+
 	// 2. 更新初始化容器镜像
 	if len(updatedPod.Spec.InitContainers) > 0 {
 		if finalPod.Spec.InitContainers == nil {
@@ -1458,12 +1484,12 @@ func (h *K8sHandler) UpdatePodYAML(c *gin.Context) {
 			}
 		}
 	}
-	
+
 	// 3. 更新 activeDeadlineSeconds
 	if updatedPod.Spec.ActiveDeadlineSeconds != nil {
 		finalPod.Spec.ActiveDeadlineSeconds = updatedPod.Spec.ActiveDeadlineSeconds
 	}
-	
+
 	// 4. 更新 tolerations (合并，只添加新的)
 	if len(updatedPod.Spec.Tolerations) > 0 {
 		existingTolerations := make(map[string]bool)
@@ -1478,7 +1504,7 @@ func (h *K8sHandler) UpdatePodYAML(c *gin.Context) {
 			}
 		}
 	}
-	
+
 	// 5. 更新 terminationGracePeriodSeconds (如果之前是负数，允许设置为1)
 	if updatedPod.Spec.TerminationGracePeriodSeconds != nil {
 		if existingPod.Spec.TerminationGracePeriodSeconds != nil && *existingPod.Spec.TerminationGracePeriodSeconds < 0 {
@@ -1619,11 +1645,11 @@ func (h *K8sHandler) GetPodDetail(c *gin.Context) {
 	conditions := make([]map[string]interface{}, 0)
 	for _, condition := range pod.Status.Conditions {
 		conditions = append(conditions, map[string]interface{}{
-			"type":            string(condition.Type),
-			"status":          string(condition.Status),
-			"lastUpdateTime":  condition.LastTransitionTime.Time,
-			"reason":          condition.Reason,
-			"message":         condition.Message,
+			"type":           string(condition.Type),
+			"status":         string(condition.Status),
+			"lastUpdateTime": condition.LastTransitionTime.Time,
+			"reason":         condition.Reason,
+			"message":        condition.Message,
 		})
 	}
 
@@ -1646,11 +1672,11 @@ func (h *K8sHandler) GetPodDetail(c *gin.Context) {
 			"annotations":       pod.Annotations,
 		},
 		"status": map[string]interface{}{
-			"phase":     string(pod.Status.Phase),
-			"podIP":     pod.Status.PodIP,
-			"hostIP":    pod.Status.HostIP,
-			"nodeName":  pod.Spec.NodeName,
-			"nodeIP":    nodeIP,
+			"phase":      string(pod.Status.Phase),
+			"podIP":      pod.Status.PodIP,
+			"hostIP":     pod.Status.HostIP,
+			"nodeName":   pod.Spec.NodeName,
+			"nodeIP":     nodeIP,
 			"conditions": conditions,
 		},
 		"spec": map[string]interface{}{
@@ -1916,29 +1942,74 @@ func (h *K8sHandler) GetServices(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	fmt.Printf("[GetServices] 开始获取服务列表: clusterID=%s, namespace=%s\n", clusterID, namespace)
 	services, err := client.GetServices(ctx, namespace)
 	if err != nil {
+		fmt.Printf("[GetServices] 获取Service列表失败: %v\n", err)
 		utils.InternalServerError(c, "获取Service列表失败: "+err.Error())
 		return
 	}
+	fmt.Printf("[GetServices] 成功获取 %d 个服务\n", len(services))
 
 	var serviceList []map[string]interface{}
 	for _, svc := range services {
-		ports := make([]string, 0)
+		// 构建端口数组
+		ports := make([]map[string]interface{}, 0)
 		for _, port := range svc.Spec.Ports {
-			ports = append(ports, fmt.Sprintf("%d/%s", port.Port, port.Protocol))
+			portInfo := map[string]interface{}{
+				"port":     port.Port,
+				"protocol": string(port.Protocol),
+			}
+			if port.TargetPort.IntVal != 0 {
+				portInfo["targetPort"] = port.TargetPort.IntVal
+			} else if port.TargetPort.StrVal != "" {
+				portInfo["targetPort"] = port.TargetPort.StrVal
+			}
+			if port.NodePort != 0 {
+				portInfo["nodePort"] = port.NodePort
+			}
+			ports = append(ports, portInfo)
+		}
+
+		// 构建选择器
+		selector := make(map[string]string)
+		for k, v := range svc.Spec.Selector {
+			selector[k] = v
+		}
+
+		// 获取外部IP
+		externalIPs := make([]string, 0)
+		if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
+			for _, ingress := range svc.Status.LoadBalancer.Ingress {
+				if ingress.IP != "" {
+					externalIPs = append(externalIPs, ingress.IP)
+				} else if ingress.Hostname != "" {
+					externalIPs = append(externalIPs, ingress.Hostname)
+				}
+			}
+		} else {
+			externalIPs = svc.Spec.ExternalIPs
 		}
 
 		serviceInfo := map[string]interface{}{
-			"name":       svc.Name,
-			"namespace":  svc.Namespace,
-			"type":       string(svc.Spec.Type),
-			"clusterIP":  svc.Spec.ClusterIP,
-			"ports":      strings.Join(ports, ", "),
-			"created_at": svc.CreationTimestamp.Time,
+			"name":        svc.Name,
+			"namespace":   svc.Namespace,
+			"type":        string(svc.Spec.Type),
+			"clusterIP":   svc.Spec.ClusterIP,
+			"cluster_ip":  svc.Spec.ClusterIP, // 兼容字段
+			"ports":       ports,
+			"selector":    selector,
+			"externalIPs": externalIPs,
+			"created_at":  svc.CreationTimestamp.Time,
+			"createdAt":   svc.CreationTimestamp.Time, // 兼容字段
+		}
+		if svc.Spec.LoadBalancerIP != "" {
+			serviceInfo["loadBalancerIP"] = svc.Spec.LoadBalancerIP
 		}
 		serviceList = append(serviceList, serviceInfo)
 	}
+
+	fmt.Printf("[GetServices] 处理完成，共 %d 个服务\n", len(serviceList))
 
 	// 内存分页
 	var req struct {
@@ -1961,6 +2032,138 @@ func (h *K8sHandler) GetServices(c *gin.Context) {
 		})
 	} else {
 		utils.Success(c, serviceList)
+	}
+}
+
+// GetIngresses 获取Ingress列表
+func (h *K8sHandler) GetIngresses(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+	namespace := c.Query("namespace") // 可选参数
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ingresses, err := client.GetIngresses(ctx, namespace)
+	if err != nil {
+		utils.InternalServerError(c, "获取Ingress列表失败: "+err.Error())
+		return
+	}
+
+	var ingressList []map[string]interface{}
+	for _, ing := range ingresses {
+		// 构建规则
+		rules := make([]map[string]interface{}, 0)
+		for _, rule := range ing.Spec.Rules {
+			paths := make([]map[string]interface{}, 0)
+			if rule.HTTP != nil {
+				for _, path := range rule.HTTP.Paths {
+					pathInfo := map[string]interface{}{
+						"path": path.Path,
+					}
+					if path.Backend.Service != nil {
+						pathInfo["backend"] = map[string]interface{}{
+							"service": map[string]interface{}{
+								"name": path.Backend.Service.Name,
+								"port": path.Backend.Service.Port.Number,
+							},
+						}
+						pathInfo["serviceName"] = path.Backend.Service.Name
+					}
+					paths = append(paths, pathInfo)
+				}
+			}
+			rules = append(rules, map[string]interface{}{
+				"host":  rule.Host,
+				"paths": paths,
+			})
+		}
+
+		// 获取端点（LoadBalancer IP或Hostname）
+		endpoint := "-"
+		if len(ing.Status.LoadBalancer.Ingress) > 0 {
+			lbIngress := ing.Status.LoadBalancer.Ingress[0]
+			if lbIngress.IP != "" {
+				endpoint = lbIngress.IP
+			} else if lbIngress.Hostname != "" {
+				endpoint = lbIngress.Hostname
+			}
+		}
+
+		// 获取Ingress Class
+		ingressClass := "-"
+		if ing.Spec.IngressClassName != nil {
+			ingressClass = *ing.Spec.IngressClassName
+		} else if ing.Annotations["kubernetes.io/ingress.class"] != "" {
+			ingressClass = ing.Annotations["kubernetes.io/ingress.class"]
+		}
+		// 标准化网关类型显示（ALB或Nginx）
+		if ingressClass != "-" {
+			ingressClassLower := strings.ToLower(ingressClass)
+			if strings.Contains(ingressClassLower, "alb") {
+				ingressClass = "ALB"
+			} else if strings.Contains(ingressClassLower, "nginx") {
+				ingressClass = "Nginx"
+			}
+		}
+
+		ingressInfo := map[string]interface{}{
+			"name":           ing.Name,
+			"namespace":      ing.Namespace,
+			"gatewayType":    ingressClass,
+			"ingress_class":  ingressClass,
+			"rules":          rules,
+			"endpoint":       endpoint,
+			"loadBalancerIP": endpoint,
+			"loadBalancer":   endpoint,
+			"created_at":     ing.CreationTimestamp.Time,
+			"createdAt":      ing.CreationTimestamp.Time, // 兼容字段
+		}
+		ingressList = append(ingressList, ingressInfo)
+	}
+
+	// 内存分页
+	var req struct {
+		Page     int `form:"page" binding:"omitempty,min=1"`
+		PageSize int `form:"page_size" binding:"omitempty,min=1,max=100"`
+	}
+	if err := c.ShouldBindQuery(&req); err == nil {
+		if req.Page == 0 {
+			req.Page = 1
+		}
+		if req.PageSize == 0 {
+			req.PageSize = 20
+		}
+		pagedList, total := paginateSlice(ingressList, req.Page, req.PageSize)
+		utils.Success(c, gin.H{
+			"data":      pagedList,
+			"total":     total,
+			"page":      req.Page,
+			"page_size": req.PageSize,
+		})
+	} else {
+		utils.Success(c, ingressList)
 	}
 }
 
@@ -2281,16 +2484,16 @@ func (h *K8sHandler) GetDeployments(c *gin.Context) {
 		deploymentInfo := map[string]interface{}{
 			"name":              deployment.Name,
 			"namespace":         deployment.Namespace,
-			"replicas":           replicas,
+			"replicas":          replicas,
 			"readyReplicas":     readyReplicas,
 			"availableReplicas": availableReplicas,
 			"available":         deployment.Status.AvailableReplicas,
 			"updated":           deployment.Status.UpdatedReplicas,
-			"age":                getPodAge(deployment.CreationTimestamp.Time),
-			"created_at":         deployment.CreationTimestamp.Time,
-			"updated_at":         updatedAt,
-			"image":              image,
-			"labels":             deployment.Labels,
+			"age":               getPodAge(deployment.CreationTimestamp.Time),
+			"created_at":        deployment.CreationTimestamp.Time,
+			"updated_at":        updatedAt,
+			"image":             image,
+			"labels":            deployment.Labels,
 		}
 		deploymentList = append(deploymentList, deploymentInfo)
 	}
@@ -2422,23 +2625,23 @@ func (h *K8sHandler) GetDeploymentDetail(c *gin.Context) {
 	}
 
 	deploymentInfo := map[string]interface{}{
-		"name":              deployment.Name,
-		"namespace":         deployment.Namespace,
-		"replicas":          replicas,
-		"readyReplicas":     readyReplicas,
-		"available":         deployment.Status.AvailableReplicas,
-		"updated":           deployment.Status.UpdatedReplicas,
-		"age":               getPodAge(deployment.CreationTimestamp.Time),
-		"created_at":        deployment.CreationTimestamp.Time,
-		"updated_at":        updatedAt,
-		"image":             image,
-		"images":            images,
-		"labels":            deployment.Labels,
-		"annotations":       deployment.Annotations,
-		"selector":          selector,
-		"strategy":          strategy,
-		"maxSurge":          maxSurge,
-		"maxUnavailable":    maxUnavailable,
+		"name":           deployment.Name,
+		"namespace":      deployment.Namespace,
+		"replicas":       replicas,
+		"readyReplicas":  readyReplicas,
+		"available":      deployment.Status.AvailableReplicas,
+		"updated":        deployment.Status.UpdatedReplicas,
+		"age":            getPodAge(deployment.CreationTimestamp.Time),
+		"created_at":     deployment.CreationTimestamp.Time,
+		"updated_at":     updatedAt,
+		"image":          image,
+		"images":         images,
+		"labels":         deployment.Labels,
+		"annotations":    deployment.Annotations,
+		"selector":       selector,
+		"strategy":       strategy,
+		"maxSurge":       maxSurge,
+		"maxUnavailable": maxUnavailable,
 	}
 
 	utils.Success(c, deploymentInfo)
@@ -2583,7 +2786,7 @@ func (h *K8sHandler) GetDeploymentPods(c *gin.Context) {
 						}
 					}
 				}
-				
+
 				// 通过ReplicaSet名称匹配Pod
 				if len(targetReplicaSetNames) > 0 {
 					for _, pod := range allPods {
@@ -2666,29 +2869,29 @@ func (h *K8sHandler) GetDeploymentPods(c *gin.Context) {
 		}
 
 		podInfo := map[string]interface{}{
-			"name":         podName,
-			"namespace":    pod.Namespace,
-			"status":       string(pod.Status.Phase),
-			"node":         pod.Spec.NodeName,
-			"nodeIP":       nodeIP,
-			"podIP":        pod.Status.PodIP,
-			"restarts":     getPodRestartCount(&pod),
-			"age":          getPodAge(pod.CreationTimestamp.Time),
-			"created_at":   pod.CreationTimestamp.Time,
-			"updated_at":   updatedAt,
-			"labels":       pod.Labels,
-			"annotations":  pod.Annotations,
+			"name":        podName,
+			"namespace":   pod.Namespace,
+			"status":      string(pod.Status.Phase),
+			"node":        pod.Spec.NodeName,
+			"nodeIP":      nodeIP,
+			"podIP":       pod.Status.PodIP,
+			"restarts":    getPodRestartCount(&pod),
+			"age":         getPodAge(pod.CreationTimestamp.Time),
+			"created_at":  pod.CreationTimestamp.Time,
+			"updated_at":  updatedAt,
+			"labels":      pod.Labels,
+			"annotations": pod.Annotations,
 			"containers":  len(pod.Spec.Containers),
-			"images":       images,
-			"ready":        getPodReadyStatus(&pod),
+			"images":      images,
+			"ready":       getPodReadyStatus(&pod),
 		}
-		
+
 		// 调试日志：确保name字段正确设置（仅第一个Pod）
 		if len(podList) == 0 {
-			fmt.Printf("[GetDeploymentPods] 第一个Pod信息: name=%s, namespace=%s, status=%s, images=%v\n", 
+			fmt.Printf("[GetDeploymentPods] 第一个Pod信息: name=%s, namespace=%s, status=%s, images=%v\n",
 				podName, pod.Namespace, string(pod.Status.Phase), images)
 		}
-		
+
 		podList = append(podList, podInfo)
 	}
 
@@ -2699,7 +2902,7 @@ func (h *K8sHandler) GetDeploymentPods(c *gin.Context) {
 // GetDeploymentCost 获取Deployment成本信息
 func (h *K8sHandler) GetDeploymentCost(c *gin.Context) {
 	fmt.Printf("[GetDeploymentCost] 收到请求: %s %s\n", c.Request.Method, c.Request.URL.Path)
-	
+
 	userID, exists := c.Get("user_id")
 	if !exists {
 		utils.Unauthorized(c, "未找到用户信息")
@@ -2709,7 +2912,7 @@ func (h *K8sHandler) GetDeploymentCost(c *gin.Context) {
 	clusterID := c.Param("id")
 	namespace := c.Param("namespace")
 	deploymentName := c.Param("deploymentName")
-	
+
 	fmt.Printf("[GetDeploymentCost] 参数: clusterID=%s, namespace=%s, deploymentName=%s\n", clusterID, namespace, deploymentName)
 
 	var cluster models.K8sCluster
@@ -2823,8 +3026,8 @@ func (h *K8sHandler) UpdateDeployment(c *gin.Context) {
 	deploymentName := c.Param("deploymentName")
 
 	var req struct {
-		Replicas    *int32           `json:"replicas"`
-		Image       string           `json:"image"`
+		Replicas    *int32            `json:"replicas"`
+		Image       string            `json:"image"`
 		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 	}
@@ -3328,28 +3531,28 @@ func (h *K8sHandler) GetStatefulSets(c *gin.Context) {
 			image = sts.Spec.Template.Spec.InitContainers[0].Image
 		}
 
-	// 获取更新时间：优先使用Status.Conditions中的最新时间，否则使用CreationTimestamp
-	updatedAt := sts.CreationTimestamp.Time
-	if sts.Status.Conditions != nil && len(sts.Status.Conditions) > 0 {
-		for _, condition := range sts.Status.Conditions {
-			// StatefulSetCondition只有LastTransitionTime，没有LastUpdateTime
-			if condition.LastTransitionTime.After(updatedAt) {
-				updatedAt = condition.LastTransitionTime.Time
+		// 获取更新时间：优先使用Status.Conditions中的最新时间，否则使用CreationTimestamp
+		updatedAt := sts.CreationTimestamp.Time
+		if sts.Status.Conditions != nil && len(sts.Status.Conditions) > 0 {
+			for _, condition := range sts.Status.Conditions {
+				// StatefulSetCondition只有LastTransitionTime，没有LastUpdateTime
+				if condition.LastTransitionTime.After(updatedAt) {
+					updatedAt = condition.LastTransitionTime.Time
+				}
 			}
 		}
-	}
 
 		statefulSetInfo := map[string]interface{}{
 			"name":              sts.Name,
 			"namespace":         sts.Namespace,
-			"replicas":           replicas,
+			"replicas":          replicas,
 			"readyReplicas":     readyReplicas,
 			"availableReplicas": availableReplicas,
-			"age":                getPodAge(sts.CreationTimestamp.Time),
-			"created_at":         sts.CreationTimestamp.Time,
-			"updated_at":         updatedAt,
-			"image":              image,
-			"labels":             sts.Labels,
+			"age":               getPodAge(sts.CreationTimestamp.Time),
+			"created_at":        sts.CreationTimestamp.Time,
+			"updated_at":        updatedAt,
+			"image":             image,
+			"labels":            sts.Labels,
 		}
 		statefulSetList = append(statefulSetList, statefulSetInfo)
 	}
@@ -3600,21 +3803,21 @@ func (h *K8sHandler) GetStatefulSetPods(c *gin.Context) {
 		nodeIP := ""
 
 		podInfo := map[string]interface{}{
-			"name":         pod.Name,
-			"namespace":    pod.Namespace,
-			"status":       string(pod.Status.Phase),
-			"node":         pod.Spec.NodeName,
-			"nodeIP":       nodeIP,
-			"podIP":        pod.Status.PodIP,
-			"restarts":     getPodRestartCount(&pod),
-			"age":          getPodAge(pod.CreationTimestamp.Time),
-			"created_at":   pod.CreationTimestamp.Time,
-			"updated_at":   updatedAt,
-			"labels":       pod.Labels,
-			"annotations":  pod.Annotations,
+			"name":        pod.Name,
+			"namespace":   pod.Namespace,
+			"status":      string(pod.Status.Phase),
+			"node":        pod.Spec.NodeName,
+			"nodeIP":      nodeIP,
+			"podIP":       pod.Status.PodIP,
+			"restarts":    getPodRestartCount(&pod),
+			"age":         getPodAge(pod.CreationTimestamp.Time),
+			"created_at":  pod.CreationTimestamp.Time,
+			"updated_at":  updatedAt,
+			"labels":      pod.Labels,
+			"annotations": pod.Annotations,
 			"containers":  len(pod.Spec.Containers),
-			"images":       images,
-			"ready":        getPodReadyStatus(&pod),
+			"images":      images,
+			"ready":       getPodReadyStatus(&pod),
 		}
 		podList = append(podList, podInfo)
 	}
@@ -3635,8 +3838,8 @@ func (h *K8sHandler) UpdateStatefulSet(c *gin.Context) {
 	statefulSetName := c.Param("statefulSetName")
 
 	var req struct {
-		Replicas    *int32           `json:"replicas"`
-		Image       string           `json:"image"`
+		Replicas    *int32            `json:"replicas"`
+		Image       string            `json:"image"`
 		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 	}
@@ -4149,14 +4352,14 @@ func (h *K8sHandler) GetDaemonSets(c *gin.Context) {
 	var daemonSetList []map[string]interface{}
 	for _, ds := range daemonSets {
 		daemonSetInfo := map[string]interface{}{
-			"name":            ds.Name,
-			"namespace":       ds.Namespace,
-			"desired":         ds.Status.DesiredNumberScheduled,
-			"current":         ds.Status.CurrentNumberScheduled,
-			"ready":           ds.Status.NumberReady,
-			"available":       ds.Status.NumberAvailable,
-			"age":             getPodAge(ds.CreationTimestamp.Time),
-			"created_at":      ds.CreationTimestamp.Time,
+			"name":       ds.Name,
+			"namespace":  ds.Namespace,
+			"desired":    ds.Status.DesiredNumberScheduled,
+			"current":    ds.Status.CurrentNumberScheduled,
+			"ready":      ds.Status.NumberReady,
+			"available":  ds.Status.NumberAvailable,
+			"age":        getPodAge(ds.CreationTimestamp.Time),
+			"created_at": ds.CreationTimestamp.Time,
 		}
 		daemonSetList = append(daemonSetList, daemonSetInfo)
 	}
@@ -4319,7 +4522,7 @@ func (h *K8sHandler) GetCronJobs(c *gin.Context) {
 		cronJobInfo := map[string]interface{}{
 			"name":               cj.Name,
 			"namespace":          cj.Namespace,
-			"schedule":            cj.Spec.Schedule,
+			"schedule":           cj.Spec.Schedule,
 			"lastScheduleTime":   lastScheduleTime,
 			"lastSuccessfulTime": lastSuccessfulTime,
 			"active":             len(cj.Status.Active),
@@ -4669,7 +4872,7 @@ func (h *K8sHandler) RollbackDeployment(c *gin.Context) {
 	// 这里使用dynamic client或者直接调用API
 	// 暂时使用GetDeployment和UpdateDeployment的组合
 	// 注意：需要确保client有UpdateDeployment方法，如果没有，需要添加
-	
+
 	// 使用kubectl rollback命令的等价操作：更新Deployment的spec
 	// 由于client封装可能没有直接暴露，我们通过获取并更新实现
 	appsClient := client.GetClientset().AppsV1()
@@ -4680,7 +4883,7 @@ func (h *K8sHandler) RollbackDeployment(c *gin.Context) {
 	}
 
 	utils.Success(c, map[string]interface{}{
-		"message": "回滚成功",
+		"message":  "回滚成功",
 		"revision": req.Revision,
 	})
 }

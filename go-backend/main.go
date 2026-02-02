@@ -50,9 +50,9 @@ func main() {
 	srv := &http.Server{
 		Addr:           ":" + cfg.Server.Port,
 		Handler:        r,
-		ReadTimeout:    15 * time.Second,
-		WriteTimeout:   15 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 1MB
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   60 * time.Second, // 增加写入超时，支持大量 Pod 数据返回
+		MaxHeaderBytes: 1 << 20,          // 1MB
 	}
 
 	// 在 goroutine 中启动服务器

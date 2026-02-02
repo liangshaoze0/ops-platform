@@ -16,8 +16,12 @@ const K8sClusterDetail = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabFromUrl = searchParams.get('tab') || 'info'
   const subtabFromUrl = searchParams.get('subtab') || ''
+  const configSubtabFromUrl = searchParams.get('configSubtab') || 'configmaps'
+  const networkSubtabFromUrl = searchParams.get('networkSubtab') || 'services'
   const [activeTab, setActiveTab] = useState(tabFromUrl)
   const [activeSubtab, setActiveSubtab] = useState(subtabFromUrl)
+  const [configSubtab, setConfigSubtab] = useState(configSubtabFromUrl)
+  const [networkSubtab, setNetworkSubtab] = useState(networkSubtabFromUrl)
   const [clusterInfo, setClusterInfo] = useState(null)
   const [nodes, setNodes] = useState([])
   const [namespaces, setNamespaces] = useState([])
@@ -54,6 +58,16 @@ const K8sClusterDetail = () => {
   const [selectedNetworkNamespace, setSelectedNetworkNamespace] = useState(
     activeTab === 'network' ? namespaceFromUrl : ''
   )
+  const [selectedServices, setSelectedServices] = useState([])
+  const [selectedIngresses, setSelectedIngresses] = useState([])
+  const [servicesPage, setServicesPage] = useState(1)
+  const [servicesPageSize, setServicesPageSize] = useState(20)
+  const [servicesTotal, setServicesTotal] = useState(0)
+  const [ingresses, setIngresses] = useState([])
+  const [ingressesPage, setIngressesPage] = useState(1)
+  const [ingressesPageSize, setIngressesPageSize] = useState(20)
+  const [ingressesTotal, setIngressesTotal] = useState(0)
+  const [networkSearchTerm, setNetworkSearchTerm] = useState('')
   // 从URL参数恢复deployment信息
   const deploymentNameFromUrl = searchParams.get('deployment')
   const deploymentNamespaceFromUrl = searchParams.get('deploymentNamespace')
@@ -113,15 +127,16 @@ const K8sClusterDetail = () => {
   const [workloadsPage, setWorkloadsPage] = useState(1)
   const [workloadsPageSize, setWorkloadsPageSize] = useState(20)
   const [workloadsTotal, setWorkloadsTotal] = useState(0)
-  const [servicesPage, setServicesPage] = useState(1)
-  const [servicesPageSize, setServicesPageSize] = useState(20)
-  const [servicesTotal, setServicesTotal] = useState(0)
   const [configMapsPage, setConfigMapsPage] = useState(1)
   const [configMapsPageSize, setConfigMapsPageSize] = useState(20)
   const [configMapsTotal, setConfigMapsTotal] = useState(0)
   const [secretsPage, setSecretsPage] = useState(1)
   const [secretsPageSize, setSecretsPageSize] = useState(20)
   const [secretsTotal, setSecretsTotal] = useState(0)
+  const [selectedConfigMaps, setSelectedConfigMaps] = useState([])
+  const [selectedSecrets, setSelectedSecrets] = useState([])
+  const [configSearchTerm, setConfigSearchTerm] = useState('')
+  const [selectedConfigNamespace, setSelectedConfigNamespace] = useState('')
   const [pvcsPage, setPvcsPage] = useState(1)
   const [pvcsPageSize, setPvcsPageSize] = useState(20)
   const [pvcsTotal, setPvcsTotal] = useState(0)
@@ -136,6 +151,8 @@ const K8sClusterDetail = () => {
   const [editingNamespace, setEditingNamespace] = useState(null)
   const [selectedDeployments, setSelectedDeployments] = useState([])
   const [selectedStatefulSets, setSelectedStatefulSets] = useState([])
+  const [selectedJobs, setSelectedJobs] = useState([])
+  const [selectedCronJobs, setSelectedCronJobs] = useState([])
   
   // 创建 Deployment 状态
   const [showCreateDeploymentModal, setShowCreateDeploymentModal] = useState(false)
@@ -313,7 +330,26 @@ const K8sClusterDetail = () => {
     if (namespaceFromUrl !== selectedWorkloadNamespace && tabFromUrl === 'workloads') {
       setSelectedWorkloadNamespace(namespaceFromUrl)
     }
+    
+    // 恢复网络子标签
+    const networkSubtabFromUrl = searchParams.get('networkSubtab') || 'services'
+    if (networkSubtabFromUrl !== networkSubtab && tabFromUrl === 'network') {
+      setNetworkSubtab(networkSubtabFromUrl)
+    }
+    
+    // 恢复配置管理子标签
+    const configSubtabFromUrl = searchParams.get('configSubtab') || 'configmaps'
+    if (configSubtabFromUrl !== configSubtab && tabFromUrl === 'config') {
+      setConfigSubtab(configSubtabFromUrl)
+    }
   }, [searchParams])
+  
+  // 确保命名空间列表已加载（用于工作负载过滤）
+  useEffect(() => {
+    if (activeTab === 'workloads' && id && namespaces.length === 0) {
+      fetchNamespaces()
+    }
+  }, [activeTab, id])
   
   // 当activeTab变化时，更新URL参数（确保刷新后保持当前页面）
   useEffect(() => {
@@ -328,6 +364,10 @@ const K8sClusterDetail = () => {
       // 如果切换到非security标签，清除subtab参数
       if (activeTab !== 'security') {
         newParams.delete('subtab')
+      }
+      // 如果切换到非config标签，清除configSubtab参数
+      if (activeTab !== 'config') {
+        newParams.delete('configSubtab')
       }
       setSearchParams(newParams, { replace: true })
     }
@@ -345,6 +385,18 @@ const K8sClusterDetail = () => {
     }
   }, [workloadType, activeTab])
   
+  // 当configSubtab变化时，更新URL参数
+  useEffect(() => {
+    if (activeTab === 'config') {
+      const currentConfigSubtab = searchParams.get('configSubtab') || 'configmaps'
+      if (configSubtab !== currentConfigSubtab) {
+        const newParams = new URLSearchParams(searchParams)
+        newParams.set('configSubtab', configSubtab)
+        setSearchParams(newParams, { replace: true })
+      }
+    }
+  }, [configSubtab, activeTab])
+  
   // 当selectedWorkloadNamespace变化时，更新URL参数
   useEffect(() => {
     if (activeTab === 'workloads') {
@@ -360,6 +412,7 @@ const K8sClusterDetail = () => {
       }
     }
   }, [selectedWorkloadNamespace, activeTab])
+  
   
   // 当activeSubtab变化时，更新URL参数
   useEffect(() => {
@@ -380,9 +433,17 @@ const K8sClusterDetail = () => {
   useEffect(() => {
     if (id) {
       fetchClusterInfo()
-      // 如果切换到工作负载或网络页面，先获取命名空间列表
-      if ((activeTab === 'workloads' || activeTab === 'network') && namespaces.length === 0) {
+      // 如果切换到工作负载页面，先获取命名空间列表
+      if (activeTab === 'workloads' && namespaces.length === 0) {
         fetchNamespaces()
+      }
+      // 如果切换到网络页面，先获取所有命名空间列表（用于下拉框）
+      if (activeTab === 'network' && namespaces.length === 0) {
+        fetchAllNamespaces()
+      }
+      // 如果切换到配置管理页面，先获取所有命名空间列表（用于下拉框）
+      if (activeTab === 'config' && namespaces.length === 0) {
+        fetchAllNamespaces()
       }
     }
   }, [id])
@@ -415,21 +476,29 @@ const K8sClusterDetail = () => {
           fetchWorkloads(namespace)
         }
       } else if (activeTab === 'network') {
-        // 如果命名空间列表为空，先获取命名空间列表
+        // 如果命名空间列表为空，先获取所有命名空间列表（用于下拉框）
         if (namespaces.length === 0) {
-          fetchNamespaces()
+          fetchAllNamespaces()
         }
-        fetchServices(selectedNetworkNamespace || '')
+        // 根据子标签加载数据
+        if (networkSubtab === 'services') {
+          fetchServices(selectedNetworkNamespace || '')
+        } else if (networkSubtab === 'ingress') {
+          fetchIngresses(selectedNetworkNamespace || '')
+        }
       } else if (activeTab === 'config') {
-        fetchConfigMaps()
-        fetchSecrets()
+        if (configSubtab === 'configmaps') {
+          fetchConfigMaps(selectedConfigNamespace || '')
+        } else if (configSubtab === 'secrets') {
+          fetchSecrets(selectedConfigNamespace || '')
+        }
       } else if (activeTab === 'storage') {
         fetchPVCs()
       } else if (activeTab === 'security') {
         // 安全管理相关数据获取可以根据需要添加
       }
     }
-  }, [id, activeTab, searchParams, selectedNetworkNamespace])
+  }, [id, activeTab, searchParams, selectedNetworkNamespace, namespaces.length, networkSubtab])
 
   useEffect(() => {
     if (selectedNamespace) {
@@ -440,8 +509,10 @@ const K8sClusterDetail = () => {
   // 当工作负载命名空间或类型变化时，重新获取数据
   useEffect(() => {
     if (activeTab === 'workloads' && id) {
-      const type = searchParams.get('type') || 'deployments'
+      const type = searchParams.get('type') || workloadType || 'deployments'
       const namespace = selectedWorkloadNamespace || ''
+      console.log('工作负载数据获取触发:', { type, namespace, activeTab, id })
+      
       if (type === 'deployments') {
         fetchDeployments(namespace)
       } else if (type === 'statefulsets') {
@@ -453,10 +524,11 @@ const K8sClusterDetail = () => {
       } else if (type === 'cronjobs') {
         fetchCronJobs(namespace)
       } else if (type === 'pods') {
+        console.log('准备获取 Pod 列表，参数:', { namespace, workloadsPage, workloadsPageSize })
         fetchWorkloads(namespace)
       }
     }
-  }, [selectedWorkloadNamespace, workloadType, id, activeTab, searchParams])
+  }, [selectedWorkloadNamespace, workloadType, id, activeTab, searchParams, workloadsPage, workloadsPageSize])
   
   // 使用ref来跟踪是否正在加载，避免重复加载
   const isLoadingDeploymentRef = useRef(false)
@@ -866,6 +938,34 @@ const K8sClusterDetail = () => {
       setError(err.response?.data?.message || t('k8s.fetchNamespacesFailed'))
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 获取所有命名空间（用于下拉框，不分页）
+  const fetchAllNamespaces = async () => {
+    try {
+      setError('')
+      // 使用一个很大的 page_size 来获取所有命名空间
+      const params = {
+        page: 1,
+        page_size: 1000, // 足够大的值以获取所有命名空间
+      }
+      const response = await api.get(`/k8s/clusters/${id}/namespaces`, { params })
+      const data = response.data.data || response.data
+      let allNamespaces = []
+      if (data.data) {
+        allNamespaces = data.data
+      } else if (Array.isArray(data)) {
+        allNamespaces = data
+      } else if (Array.isArray(response.data)) {
+        allNamespaces = response.data
+      }
+      // 更新命名空间列表，但不更新分页状态
+      setNamespaces(allNamespaces)
+      console.log('[fetchAllNamespaces] 获取到所有命名空间:', allNamespaces.length, '个')
+    } catch (err) {
+      console.error('获取所有命名空间列表失败:', err)
+      // 不显示错误，避免影响用户体验
     }
   }
 
@@ -1444,6 +1544,12 @@ const K8sClusterDetail = () => {
   }
 
   const fetchWorkloads = async (namespace = '', page = null) => {
+    if (!id) {
+      console.error('集群 ID 不存在，无法获取 Pod 列表')
+      setError('集群 ID 不存在')
+      return
+    }
+    
     try {
       setLoading(true)
       setError('')
@@ -1457,18 +1563,64 @@ const K8sClusterDetail = () => {
         params.namespace = namespace.trim()
       }
       
+      console.log('获取 Pod 列表，参数:', { clusterId: id, params, currentPage, workloadsPage, workloadsPageSize })
       const response = await api.get(`/k8s/clusters/${id}/pods`, { params })
+      console.log('Pod 列表 API 响应:', response)
+      console.log('响应数据结构:', {
+        'response.data': response.data,
+        'response.data.data': response.data?.data,
+        'response.data.data.data': response.data?.data?.data,
+        'isArray(response.data)': Array.isArray(response.data),
+        'isArray(response.data.data)': Array.isArray(response.data?.data)
+      })
+      
       const data = response.data.data || response.data
-      if (data.data) {
+      if (data && data.data && Array.isArray(data.data)) {
+        // 标准分页格式: { data: [...], total: 100 }
         setWorkloads(data.data)
-        setWorkloadsTotal(data.total || 0)
+        setWorkloadsTotal(data.total || data.data.length)
+        console.log('Pod 列表获取成功（分页格式），数量:', data.data.length, '总计:', data.total)
+      } else if (Array.isArray(data)) {
+        // 直接数组格式
+        setWorkloads(data)
+        setWorkloadsTotal(data.length)
+        console.log('Pod 列表获取成功（直接数组），数量:', data.length)
+      } else if (Array.isArray(response.data)) {
+        // 响应数据本身就是数组
+        setWorkloads(response.data)
+        setWorkloadsTotal(response.data.length)
+        console.log('Pod 列表获取成功（响应数组），数量:', response.data.length)
       } else {
-        setWorkloads(Array.isArray(data) ? data : [])
-        setWorkloadsTotal(Array.isArray(data) ? data.length : 0)
+        // 空数据或未知格式
+        console.warn('Pod 列表数据格式未知，设置为空:', { data, responseData: response.data })
+        setWorkloads([])
+        setWorkloadsTotal(0)
       }
     } catch (err) {
       console.error('获取 Pod 列表失败:', err)
-      setError(err.response?.data?.message || t('k8s.fetchWorkloadsFailed'))
+      console.error('错误详情:', {
+        message: err.message,
+        code: err.code,
+        response: err.response?.data,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        url: err.config?.url,
+        params: err.config?.params,
+        stack: err.stack
+      })
+      // 如果是网络错误（如 socket hang up），显示更友好的错误信息
+      if (err.code === 'ECONNRESET' || err.message?.includes('socket hang up') || err.message?.includes('Network Error')) {
+        setError('网络连接失败，请检查后端服务是否正常运行')
+      } else if (err.response?.status === 404) {
+        setError('API 端点不存在，请检查后端路由配置')
+      } else if (err.response?.status === 500) {
+        setError('服务器内部错误，请检查后端日志')
+      } else {
+        setError(err.response?.data?.message || err.message || t('k8s.fetchWorkloadsFailed'))
+      }
+      // 即使获取失败，也清空列表，避免显示旧数据
+      setWorkloads([])
+      setWorkloadsTotal(0)
     } finally {
       setLoading(false)
     }
@@ -1566,16 +1718,41 @@ const K8sClusterDetail = () => {
         },
       })
       const data = response.data.data || response.data
-      if (data.data) {
-        setDaemonSets(data.data)
+      let daemonSetsList = []
+      if (data && data.data) {
+        daemonSetsList = data.data
         setWorkloadsTotal(data.total || 0)
+      } else if (Array.isArray(data)) {
+        daemonSetsList = data
+        setWorkloadsTotal(data.length)
+      } else if (Array.isArray(response.data)) {
+        daemonSetsList = response.data
+        setWorkloadsTotal(response.data.length)
       } else {
-        setDaemonSets(Array.isArray(data) ? data : [])
-        setWorkloadsTotal(Array.isArray(data) ? data.length : 0)
+        daemonSetsList = []
+        setWorkloadsTotal(0)
       }
+      
+      // 确保每个 DaemonSet 都有 images 数组
+      daemonSetsList = daemonSetsList.map(ds => {
+        if (!ds.images) {
+          if (ds.image) {
+            ds.images = [ds.image]
+          } else {
+            ds.images = []
+          }
+        } else if (!Array.isArray(ds.images)) {
+          ds.images = [ds.images]
+        }
+        return ds
+      })
+      
+      setDaemonSets(daemonSetsList)
     } catch (err) {
       console.error('获取DaemonSet列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchDaemonSetsFailed'))
+      setDaemonSets([])
+      setWorkloadsTotal(0)
     } finally {
       setLoading(false)
     }
@@ -1593,16 +1770,41 @@ const K8sClusterDetail = () => {
         },
       })
       const data = response.data.data || response.data
-      if (data.data) {
-        setJobs(data.data)
+      let jobsList = []
+      if (data && data.data) {
+        jobsList = data.data
         setWorkloadsTotal(data.total || 0)
+      } else if (Array.isArray(data)) {
+        jobsList = data
+        setWorkloadsTotal(data.length)
+      } else if (Array.isArray(response.data)) {
+        jobsList = response.data
+        setWorkloadsTotal(response.data.length)
       } else {
-        setJobs(Array.isArray(data) ? data : [])
-        setWorkloadsTotal(Array.isArray(data) ? data.length : 0)
+        jobsList = []
+        setWorkloadsTotal(0)
       }
+      
+      // 确保每个 Job 都有 images 数组
+      jobsList = jobsList.map(job => {
+        if (!job.images) {
+          if (job.image) {
+            job.images = [job.image]
+          } else {
+            job.images = []
+          }
+        } else if (!Array.isArray(job.images)) {
+          job.images = [job.images]
+        }
+        return job
+      })
+      
+      setJobs(jobsList)
     } catch (err) {
       console.error('获取Job列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchJobsFailed'))
+      setJobs([])
+      setWorkloadsTotal(0)
     } finally {
       setLoading(false)
     }
@@ -1620,16 +1822,41 @@ const K8sClusterDetail = () => {
         },
       })
       const data = response.data.data || response.data
-      if (data.data) {
-        setCronJobs(data.data)
+      let cronJobsList = []
+      if (data && data.data) {
+        cronJobsList = data.data
         setWorkloadsTotal(data.total || 0)
+      } else if (Array.isArray(data)) {
+        cronJobsList = data
+        setWorkloadsTotal(data.length)
+      } else if (Array.isArray(response.data)) {
+        cronJobsList = response.data
+        setWorkloadsTotal(response.data.length)
       } else {
-        setCronJobs(Array.isArray(data) ? data : [])
-        setWorkloadsTotal(Array.isArray(data) ? data.length : 0)
+        cronJobsList = []
+        setWorkloadsTotal(0)
       }
+      
+      // 确保每个 CronJob 都有 images 数组
+      cronJobsList = cronJobsList.map(cronJob => {
+        if (!cronJob.images) {
+          if (cronJob.image) {
+            cronJob.images = [cronJob.image]
+          } else {
+            cronJob.images = []
+          }
+        } else if (!Array.isArray(cronJob.images)) {
+          cronJob.images = [cronJob.images]
+        }
+        return cronJob
+      })
+      
+      setCronJobs(cronJobsList)
     } catch (err) {
       console.error('获取CronJob列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchCronJobsFailed'))
+      setCronJobs([])
+      setWorkloadsTotal(0)
     } finally {
       setLoading(false)
     }
@@ -1643,38 +1870,113 @@ const K8sClusterDetail = () => {
           page: servicesPage,
           page_size: servicesPageSize,
       }
-      if (namespace) {
-        params.namespace = namespace
+      if (namespace && namespace.trim()) {
+        params.namespace = namespace.trim()
       }
+      console.log('[fetchServices] 请求参数:', { id, namespace, params })
       const response = await api.get(`/k8s/clusters/${id}/services`, {
         params,
       })
+      console.log('[fetchServices] 响应数据:', response.data)
       const data = response.data.data || response.data
-      if (data.data) {
-        setServices(data.data)
+      let servicesList = []
+      if (data && data.data) {
+        servicesList = data.data
         setServicesTotal(data.total || 0)
+      } else if (Array.isArray(data)) {
+        servicesList = data
+        setServicesTotal(data.length)
+      } else if (Array.isArray(response.data)) {
+        servicesList = response.data
+        setServicesTotal(response.data.length)
       } else {
-        setServices(Array.isArray(data) ? data : [])
-        setServicesTotal(Array.isArray(data) ? data.length : 0)
+        servicesList = []
+        setServicesTotal(0)
       }
+      console.log('[fetchServices] 处理后的服务列表:', servicesList)
+      // 确保每个服务对象都有必要的字段
+      servicesList = servicesList.map(svc => ({
+        name: svc.name || '',
+        namespace: svc.namespace || '',
+        type: svc.type || 'ClusterIP',
+        clusterIP: svc.clusterIP || svc.cluster_ip || 'None',
+        cluster_ip: svc.clusterIP || svc.cluster_ip || 'None',
+        ports: svc.ports || [],
+        selector: svc.selector || {},
+        externalIPs: svc.externalIPs || [],
+        loadBalancerIP: svc.loadBalancerIP || '',
+        created_at: svc.created_at || svc.createdAt,
+        createdAt: svc.created_at || svc.createdAt,
+        ...svc
+      }))
+      setServices(servicesList)
     } catch (err) {
       console.error('获取服务列表失败:', err)
-      setError(err.response?.data?.message || t('k8s.fetchServicesFailed'))
+      console.error('错误详情:', err.response?.data)
+      setError(err.response?.data?.message || err.message || t('k8s.fetchServicesFailed'))
+      setServices([])
+      setServicesTotal(0)
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchConfigMaps = async () => {
+  const fetchIngresses = async (namespace = '') => {
     try {
       setLoading(true)
       setError('')
-      const response = await api.get(`/k8s/clusters/${id}/configmaps`, {
-        params: {
-          page: configMapsPage,
-          page_size: configMapsPageSize,
-        },
+      const params = {
+          page: ingressesPage,
+          page_size: ingressesPageSize,
+      }
+      if (namespace && namespace.trim()) {
+        params.namespace = namespace.trim()
+      }
+      console.log('[fetchIngresses] 请求参数:', { id, namespace, params })
+      const response = await api.get(`/k8s/clusters/${id}/ingresses`, {
+        params,
       })
+      console.log('[fetchIngresses] 响应数据:', response.data)
+      const data = response.data.data || response.data
+      let ingressesList = []
+      if (data && data.data) {
+        ingressesList = data.data
+        setIngressesTotal(data.total || 0)
+      } else if (Array.isArray(data)) {
+        ingressesList = data
+        setIngressesTotal(data.length)
+      } else if (Array.isArray(response.data)) {
+        ingressesList = response.data
+        setIngressesTotal(response.data.length)
+      } else {
+        ingressesList = []
+        setIngressesTotal(0)
+      }
+      console.log('[fetchIngresses] 处理后的路由列表:', ingressesList)
+      setIngresses(ingressesList)
+    } catch (err) {
+      console.error('获取 Ingress 列表失败:', err)
+      console.error('错误详情:', err.response?.data)
+      setError(err.response?.data?.message || err.message || t('k8s.fetchIngressesFailed'))
+      setIngresses([])
+      setIngressesTotal(0)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchConfigMaps = async (namespace = '') => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: configMapsPage,
+        page_size: configMapsPageSize,
+      }
+      if (namespace) {
+        params.namespace = namespace
+      }
+      const response = await api.get(`/k8s/clusters/${id}/configmaps`, { params })
       const data = response.data.data || response.data
       if (data.data) {
         setConfigMaps(data.data)
@@ -1691,16 +1993,18 @@ const K8sClusterDetail = () => {
     }
   }
 
-  const fetchSecrets = async () => {
+  const fetchSecrets = async (namespace = '') => {
     try {
       setLoading(true)
       setError('')
-      const response = await api.get(`/k8s/clusters/${id}/secrets`, {
-        params: {
-          page: secretsPage,
-          page_size: secretsPageSize,
-        },
-      })
+      const params = {
+        page: secretsPage,
+        page_size: secretsPageSize,
+      }
+      if (namespace) {
+        params.namespace = namespace
+      }
+      const response = await api.get(`/k8s/clusters/${id}/secrets`, { params })
       const data = response.data.data || response.data
       if (data.data) {
         setSecrets(data.data)
@@ -3268,6 +3572,1028 @@ const K8sClusterDetail = () => {
                       )}
                     </div>
                   )}
+
+                  {activeTab === 'network' && (
+                    <div className="network-section">
+                      {/* 服务 (Service) 列表 */}
+                      {networkSubtab === 'services' && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>服务 <span className="deployment-subtitle">Service</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建服务功能暂未实现')
+                                }}
+                              >
+                                创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedNetworkNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedNetworkNamespace(newNamespace)
+                                    setServicesPage(1)
+                                    fetchServices(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">全部命名空间</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">名称</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={networkSearchTerm}
+                                    onChange={(e) => setNetworkSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchServices(selectedNetworkNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchServices(selectedNetworkNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchServices(selectedNetworkNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedServices.length > 0 && selectedServices.length === services.filter((svc) => {
+                                        if (!networkSearchTerm) return true
+                                        return (svc.name || '').toLowerCase().includes(networkSearchTerm.toLowerCase())
+                                      }).length}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const filteredServices = services.filter((svc) => {
+                                            if (!networkSearchTerm) return true
+                                            return (svc.name || '').toLowerCase().includes(networkSearchTerm.toLowerCase())
+                                          })
+                                          setSelectedServices(filteredServices.map(svc => `${svc.namespace}/${svc.name}`))
+                                        } else {
+                                          setSelectedServices([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                  <th>名称</th>
+                                  <th>命名空间</th>
+                                  <th>类型</th>
+                                  <th>集群 IP</th>
+                                  <th>端口映射</th>
+                                  <th>外部 IP 地址</th>
+                                  <th>选择器</th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {services
+                                  .filter((svc) => {
+                                    if (!networkSearchTerm) return true
+                                    return (svc.name || '').toLowerCase().includes(networkSearchTerm.toLowerCase())
+                                  })
+                                  .map((svc) => {
+                                    const key = `${svc.namespace}/${svc.name}`
+                                    const isSelected = selectedServices.includes(key)
+                                    const ports = svc.ports || []
+                                    const portMapping = ports.length > 0 
+                                      ? ports.map(p => {
+                                          if (typeof p === 'string') {
+                                            return p
+                                          }
+                                          if (p.nodePort) {
+                                            return `${p.port}:${p.targetPort || p.port}/${p.protocol || 'TCP'}`
+                                          }
+                                          return `${p.port}${p.targetPort && p.targetPort !== p.port ? ':' + p.targetPort : ''}/${p.protocol || 'TCP'}`
+                                        }).join(', ')
+                                      : '-'
+                                    const selector = svc.selector ? Object.entries(svc.selector).map(([k, v]) => `${k}: ${v}`).join(', ') : '-'
+                                    const createdAt = svc.created_at || svc.createdAt
+                                    const createdYear = createdAt ? new Date(createdAt).getFullYear() + '年' : '-'
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedServices([...selectedServices, key])
+                                              } else {
+                                                setSelectedServices(selectedServices.filter(k => k !== key))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">{svc.name}</td>
+                                        <td>{svc.namespace || '-'}</td>
+                                        <td>{svc.type || 'ClusterIP'}</td>
+                                        <td>{svc.clusterIP || svc.cluster_ip || 'None'}</td>
+                                        <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={portMapping}>
+                                          {portMapping}
+                                        </td>
+                                        <td>{svc.externalIPs && svc.externalIPs.length > 0 ? svc.externalIPs.join(', ') : (svc.loadBalancerIP || 'None')}</td>
+                                        <td className="labels-cell" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={selector}>
+                                          {selector}
+                                        </td>
+                                        <td>{createdYear}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              setError('更新服务功能暂未实现')
+                                            }}>
+                                              更新
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              setError('YAML 编辑功能暂未实现')
+                                            }}>
+                                              YAML 编辑
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                  dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                    if (window.confirm(`确定要删除服务 ${svc.name} 吗？`)) {
+                                                      setError('删除服务功能暂未实现')
+                                                    }
+                                                  }}
+                                                >
+                                                  删除
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {services.length === 0 && (
+                                  <tr>
+                                    <td colSpan="10" className="empty-state">{t('k8s.noServices')}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {selectedServices.length > 0 && (
+                            <div className="batch-actions" style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px' }}>
+                              <button
+                                className="btn-secondary"
+                                onClick={() => {
+                                  if (window.confirm(`确定要删除选中的 ${selectedServices.length} 个服务吗？`)) {
+                                    setError('批量删除服务功能暂未实现')
+                                  }
+                                }}
+                              >
+                                批量删除({selectedServices.length})
+                              </button>
+                            </div>
+                          )}
+
+                          {!loading && services.length > 0 && (
+                            <Pagination
+                              currentPage={servicesPage}
+                              totalPages={Math.ceil(servicesTotal / servicesPageSize)}
+                              totalItems={servicesTotal}
+                              pageSize={servicesPageSize}
+                              onPageChange={(page) => {
+                                setServicesPage(page)
+                                fetchServices(selectedNetworkNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setServicesPageSize(newSize)
+                                setServicesPage(1)
+                                fetchServices(selectedNetworkNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* 路由 (Ingress) 列表 */}
+                      {networkSubtab === 'ingress' && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>路由 <span className="deployment-subtitle">Ingress</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建路由功能暂未实现')
+                                }}
+                              >
+                                创建 Ingress
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用 YAML 创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedNetworkNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedNetworkNamespace(newNamespace)
+                                    setIngressesPage(1)
+                                    fetchIngresses(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">全部命名空间</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">名称</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={networkSearchTerm}
+                                    onChange={(e) => setNetworkSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchIngresses(selectedNetworkNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchIngresses(selectedNetworkNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="btn-secondary" disabled style={{ marginRight: '8px' }}>
+                                Nginx Ingress 概览
+                              </button>
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchIngresses(selectedNetworkNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedIngresses.length > 0 && selectedIngresses.length === ingresses.filter((ing) => {
+                                        if (!networkSearchTerm) return true
+                                        return (ing.name || '').toLowerCase().includes(networkSearchTerm.toLowerCase())
+                                      }).length}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const filteredIngresses = ingresses.filter((ing) => {
+                                            if (!networkSearchTerm) return true
+                                            return (ing.name || '').toLowerCase().includes(networkSearchTerm.toLowerCase())
+                                          })
+                                          setSelectedIngresses(filteredIngresses.map(ing => `${ing.namespace}/${ing.name}`))
+                                        } else {
+                                          setSelectedIngresses([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                  <th>名称</th>
+                                  <th>命名空间</th>
+                                  <th>网关类型</th>
+                                  <th>规则</th>
+                                  <th>端点</th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {ingresses
+                                  .filter((ing) => {
+                                    if (!networkSearchTerm) return true
+                                    return (ing.name || '').toLowerCase().includes(networkSearchTerm.toLowerCase())
+                                  })
+                                  .map((ing) => {
+                                    const key = `${ing.namespace}/${ing.name}`
+                                    const isSelected = selectedIngresses.includes(key)
+                                    const rules = ing.rules || []
+                                    const rulesList = []
+                                    if (rules.length > 0) {
+                                      rules.forEach(rule => {
+                                        const host = rule.host || '*'
+                                        const paths = rule.paths || []
+                                        if (paths.length > 0) {
+                                          paths.forEach(p => {
+                                            const path = p.path || '/'
+                                            const serviceName = p.serviceName || (p.backend && p.backend.service && p.backend.service.name) || (p.backend && p.backend.serviceName) || '-'
+                                            rulesList.push(`${host}${path} → ${serviceName}`)
+                                          })
+                                        } else {
+                                          rulesList.push(host)
+                                        }
+                                      })
+                                    }
+                                    const rulesDisplay = rulesList.length > 0 ? rulesList.join('\n') : '-'
+                                    const rulesDisplayText = rulesList.length > 0 ? rulesList.join('; ') : '-'
+                                    const endpoint = ing.endpoint || ing.loadBalancerIP || ing.loadBalancer || '-'
+                                    const gatewayType = ing.gatewayType || ing.ingress_class || '-'
+                                    const isNginx = gatewayType.toLowerCase().includes('nginx')
+                                    const isALB = gatewayType.toLowerCase().includes('alb')
+                                    const createdAt = ing.created_at || ing.createdAt
+                                    const createdTime = createdAt ? (() => {
+                                      const date = new Date(createdAt)
+                                      const year = date.getFullYear()
+                                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                                      const day = String(date.getDate()).padStart(2, '0')
+                                      const hours = String(date.getHours()).padStart(2, '0')
+                                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                                      const seconds = String(date.getSeconds()).padStart(2, '0')
+                                      return `${year}年${month}月${day}日 ${hours}:${minutes}:${seconds}`
+                                    })() : '-'
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedIngresses([...selectedIngresses, key])
+                                              } else {
+                                                setSelectedIngresses(selectedIngresses.filter(k => k !== key))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">{ing.name}</td>
+                                        <td>{ing.namespace || '-'}</td>
+                                        <td>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            {isALB ? (
+                                              <span style={{ color: '#ff4d4f', fontSize: '16px' }}>☁</span>
+                                            ) : isNginx ? (
+                                              <span style={{ color: '#52c41a', fontSize: '14px', fontWeight: 'bold' }}>N</span>
+                                            ) : null}
+                                            <span>{gatewayType}</span>
+                                          </div>
+                                        </td>
+                                        <td style={{ maxWidth: '500px', lineHeight: '1.6' }}>
+                                          {rulesList.length > 0 ? (
+                                            <div style={{ whiteSpace: 'pre-line', wordBreak: 'break-word' }} title={rulesDisplayText}>
+                                              {rulesDisplay}
+                                            </div>
+                                          ) : (
+                                            <span>-</span>
+                                          )}
+                                        </td>
+                                        <td>{endpoint}</td>
+                                        <td>{createdTime}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              setError('更新路由功能暂未实现')
+                                            }}>
+                                              更新
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              setError('YAML 编辑功能暂未实现')
+                                            }}>
+                                              YAML 编辑
+                                            </button>
+                                            {isNginx && (
+                                              <button className="btn-text" onClick={() => {
+                                                setError('监控功能暂未实现')
+                                              }}>
+                                                监控
+                                              </button>
+                                            )}
+                                            <div className="action-dropdown">
+                                              <button
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                  dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                    if (window.confirm(`确定要删除路由 ${ing.name} 吗？`)) {
+                                                      setError('删除路由功能暂未实现')
+                                                    }
+                                                  }}
+                                                >
+                                                  删除
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {ingresses.length === 0 && (
+                                  <tr>
+                                    <td colSpan="8" className="empty-state">{t('k8s.noIngresses')}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {selectedIngresses.length > 0 && (
+                            <div className="batch-actions" style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px' }}>
+                              <button
+                                className="btn-secondary"
+                                onClick={() => {
+                                  if (window.confirm(`确定要删除选中的 ${selectedIngresses.length} 个路由吗？`)) {
+                                    setError('批量删除路由功能暂未实现')
+                                  }
+                                }}
+                              >
+                                批量删除({selectedIngresses.length})
+                              </button>
+                            </div>
+                          )}
+
+                          {!loading && ingresses.length > 0 && (
+                            <Pagination
+                              currentPage={ingressesPage}
+                              totalPages={Math.ceil(ingressesTotal / ingressesPageSize)}
+                              totalItems={ingressesTotal}
+                              pageSize={ingressesPageSize}
+                              onPageChange={(page) => {
+                                setIngressesPage(page)
+                                fetchIngresses(selectedNetworkNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setIngressesPageSize(newSize)
+                                setIngressesPage(1)
+                                fetchIngresses(selectedNetworkNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'config' && (
+                    <div className="config-section">
+                      {/* 配置项 (ConfigMap) 列表 */}
+                      {configSubtab === 'configmaps' && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>配置项 <span className="deployment-subtitle">Configmap</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建配置项功能暂未实现')
+                                }}
+                              >
+                                创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedConfigNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedConfigNamespace(newNamespace)
+                                    setConfigMapsPage(1)
+                                    fetchConfigMaps(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">全部命名空间</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">名称</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={configSearchTerm}
+                                    onChange={(e) => setConfigSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchConfigMaps(selectedConfigNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchConfigMaps(selectedConfigNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchConfigMaps(selectedConfigNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedConfigMaps.length > 0 && selectedConfigMaps.length === configMaps.filter((cm) => {
+                                        if (!configSearchTerm) return true
+                                        return (cm.name || '').toLowerCase().includes(configSearchTerm.toLowerCase())
+                                      }).length}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const filteredConfigMaps = configMaps.filter((cm) => {
+                                            if (!configSearchTerm) return true
+                                            return (cm.name || '').toLowerCase().includes(configSearchTerm.toLowerCase())
+                                          })
+                                          setSelectedConfigMaps(filteredConfigMaps.map(cm => `${cm.namespace}/${cm.name}`))
+                                        } else {
+                                          setSelectedConfigMaps([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                  <th>名称</th>
+                                  <th>命名空间</th>
+                                  <th>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      </svg>
+                                      标签
+                                    </span>
+                                  </th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {configMaps
+                                  .filter((cm) => {
+                                    if (!configSearchTerm) return true
+                                    return (cm.name || '').toLowerCase().includes(configSearchTerm.toLowerCase())
+                                  })
+                                  .map((cm) => {
+                                    const key = `${cm.namespace}/${cm.name}`
+                                    const isSelected = selectedConfigMaps.includes(key)
+                                    // 格式化创建时间：YYYY年MM月DD日 HH:MM:SS
+                                    let formattedTime = '-'
+                                    if (cm.created_at || cm.createdAt) {
+                                      const date = new Date(cm.created_at || cm.createdAt)
+                                      const year = date.getFullYear()
+                                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                                      const day = String(date.getDate()).padStart(2, '0')
+                                      const hours = String(date.getHours()).padStart(2, '0')
+                                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                                      const seconds = String(date.getSeconds()).padStart(2, '0')
+                                      formattedTime = `${year}年${month}月${day}日 ${hours}:${minutes}:${seconds}`
+                                    }
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedConfigMaps([...selectedConfigMaps, key])
+                                              } else {
+                                                setSelectedConfigMaps(selectedConfigMaps.filter(k => k !== key))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">{cm.name}</td>
+                                        <td>{cm.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {cm.labels && Object.keys(cm.labels).length > 0 ? (
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                              </svg>
+                                            </span>
+                                          ) : '-'}
+                                        </td>
+                                        <td>{formattedTime}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              setError('编辑配置项功能暂未实现')
+                                            }}>
+                                              编辑
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              setError('YAML编辑功能暂未实现')
+                                            }}>
+                                              YAML 编辑
+                                            </button>
+                                            <button className="btn-text danger" onClick={() => {
+                                              if (window.confirm(`确定要删除配置项 ${cm.name} 吗？`)) {
+                                                setError('删除配置项功能暂未实现')
+                                              }
+                                            }}>
+                                              删除
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {configMaps.length === 0 && (
+                                  <tr>
+                                    <td colSpan="6" className="empty-state">{t('k8s.noConfigMaps') || '暂无配置项'}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && configMaps.length > 0 && (
+                            <Pagination
+                              currentPage={configMapsPage}
+                              totalPages={Math.ceil(configMapsTotal / configMapsPageSize)}
+                              totalItems={configMapsTotal}
+                              pageSize={configMapsPageSize}
+                              onPageChange={(page) => {
+                                setConfigMapsPage(page)
+                                fetchConfigMaps(selectedConfigNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setConfigMapsPageSize(newSize)
+                                setConfigMapsPage(1)
+                                fetchConfigMaps(selectedConfigNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* 保密字典 (Secret) 列表 */}
+                      {configSubtab === 'secrets' && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>保密字典 <span className="deployment-subtitle">Secret</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建保密字典功能暂未实现')
+                                }}
+                              >
+                                创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedConfigNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedConfigNamespace(newNamespace)
+                                    setSecretsPage(1)
+                                    fetchSecrets(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">全部命名空间</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">名称</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={configSearchTerm}
+                                    onChange={(e) => setConfigSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchSecrets(selectedConfigNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchSecrets(selectedConfigNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchSecrets(selectedConfigNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedSecrets.length > 0 && selectedSecrets.length === secrets.filter((s) => {
+                                        if (!configSearchTerm) return true
+                                        return (s.name || '').toLowerCase().includes(configSearchTerm.toLowerCase())
+                                      }).length}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const filteredSecrets = secrets.filter((s) => {
+                                            if (!configSearchTerm) return true
+                                            return (s.name || '').toLowerCase().includes(configSearchTerm.toLowerCase())
+                                          })
+                                          setSelectedSecrets(filteredSecrets.map(s => `${s.namespace}/${s.name}`))
+                                        } else {
+                                          setSelectedSecrets([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                  <th>名称</th>
+                                  <th>命名空间</th>
+                                  <th>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      </svg>
+                                      标签
+                                    </span>
+                                  </th>
+                                  <th>类型</th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {secrets
+                                  .filter((s) => {
+                                    if (!configSearchTerm) return true
+                                    return (s.name || '').toLowerCase().includes(configSearchTerm.toLowerCase())
+                                  })
+                                  .map((s) => {
+                                    const key = `${s.namespace}/${s.name}`
+                                    const isSelected = selectedSecrets.includes(key)
+                                    // 格式化创建时间：YYYY年MM月DD日 HH:MM:SS
+                                    let formattedTime = '-'
+                                    if (s.created_at || s.createdAt) {
+                                      const date = new Date(s.created_at || s.createdAt)
+                                      const year = date.getFullYear()
+                                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                                      const day = String(date.getDate()).padStart(2, '0')
+                                      const hours = String(date.getHours()).padStart(2, '0')
+                                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                                      const seconds = String(date.getSeconds()).padStart(2, '0')
+                                      formattedTime = `${year}年${month}月${day}日 ${hours}:${minutes}:${seconds}`
+                                    }
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedSecrets([...selectedSecrets, key])
+                                              } else {
+                                                setSelectedSecrets(selectedSecrets.filter(k => k !== key))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">{s.name}</td>
+                                        <td>{s.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {s.labels && Object.keys(s.labels).length > 0 ? (
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                              </svg>
+                                            </span>
+                                          ) : '-'}
+                                        </td>
+                                        <td>{s.type || 'Opaque'}</td>
+                                        <td>{formattedTime}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              setError('编辑保密字典功能暂未实现')
+                                            }}>
+                                              编辑
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              setError('YAML编辑功能暂未实现')
+                                            }}>
+                                              YAML 编辑
+                                            </button>
+                                            <button className="btn-text danger" onClick={() => {
+                                              if (window.confirm(`确定要删除保密字典 ${s.name} 吗？`)) {
+                                                setError('删除保密字典功能暂未实现')
+                                              }
+                                            }}>
+                                              删除
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {secrets.length === 0 && (
+                                  <tr>
+                                    <td colSpan="7" className="empty-state">{t('k8s.noSecrets') || '暂无保密字典'}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && secrets.length > 0 && (
+                            <Pagination
+                              currentPage={secretsPage}
+                              totalPages={Math.ceil(secretsTotal / secretsPageSize)}
+                              totalItems={secretsTotal}
+                              pageSize={secretsPageSize}
+                              onPageChange={(page) => {
+                                setSecretsPage(page)
+                                fetchSecrets(selectedConfigNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setSecretsPageSize(newSize)
+                                setSecretsPage(1)
+                                fetchSecrets(selectedConfigNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'storage' && (
+                    <div className="storage-section">
+                      {/* 存储管理功能 */}
+                    </div>
+                  )}
               </>
             </div>
           </div>
@@ -3307,7 +4633,8 @@ const K8sClusterDetail = () => {
                         </div>
                           </div>
                             </div>
-          )}
+                  )}
+
 
                   {activeTab === 'workloads' && (
                     <div className="workloads-section">
@@ -3464,25 +4791,25 @@ const K8sClusterDetail = () => {
                                               ))}
                                               {Object.keys(d.labels).length > 3 && (
                                                 <span className="label-more">+{Object.keys(d.labels).length - 3}</span>
-                                    )}
-                                  </div>
+                                                  )}
+                                                </div>
                                 ) : (
                                             '-'
                                           )}
                                             </td>
                                       <td>
                                           {(d.readyReplicas ?? d.ready_replicas ?? 0)}/{(d.replicas ?? 0)}
-                                              </td>
+                                            </td>
                                         <td className="images-cell">
                                           {d.image || (Array.isArray(d.images) && d.images.length ? d.images[0] : '-')}
                                             </td>
                                         <td>{d.created_at || d.createdAt ? new Date(d.created_at || d.createdAt).toLocaleString('zh-CN') : '-'}</td>
                                         <td>{d.updated_at || d.updatedAt ? new Date(d.updated_at || d.updatedAt).toLocaleString('zh-CN') : '-'}</td>
-                                              <td>
-                                                <div className="action-buttons">
+                                            <td>
+                                              <div className="action-buttons">
                                             <button className="btn-text" onClick={() => handleDeploymentClick(d)}>
                                               详情
-                              </button>
+                                </button>
                                             <button className="btn-text" onClick={() => handleEditDeploymentLabels(d)}>
                                 {t('common.edit')}
                               </button>
@@ -3490,7 +4817,7 @@ const K8sClusterDetail = () => {
                                 {t('k8s.scale')}
                               </button>
                               <div className="action-dropdown">
-                                <button 
+                                                <button 
                                                   className="btn-text btn-more"
                                   onClick={(e) => {
                                     e.stopPropagation()
@@ -3504,7 +4831,7 @@ const K8sClusterDetail = () => {
                                   }}
                                 >
                                                 ⋮
-                                </button>
+                                                </button>
                                 <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
                                   <button onClick={() => {
                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
@@ -3602,12 +4929,12 @@ const K8sClusterDetail = () => {
                                       document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                   }}>
                                     {t('common.delete')}
-                                  </button>
+                                                </button>
                                 </div>
                               </div>
-                        </div>
-                                        </td>
-                                      </tr>
+                                              </div>
+                                            </td>
+                                          </tr>
                                         )
                                   })}
                                 {deployments.length === 0 && (
@@ -3617,7 +4944,7 @@ const K8sClusterDetail = () => {
                                     )}
                                   </tbody>
                                 </table>
-                              </div>
+                            </div>
 
                           {!loading && deployments.length > 0 && (
                         <Pagination
@@ -3698,9 +5025,9 @@ const K8sClusterDetail = () => {
                                       <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                     </svg>
                             </button>
-                                              </div>
-                                            </div>
-                                          </div>
+                                  </div>
+                        </div>
+                      </div>
 
                             <div className="deployment-toolbar-right">
                               <button className="icon-btn" disabled title="设置">
@@ -3719,13 +5046,13 @@ const K8sClusterDetail = () => {
                                   <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                 </svg>
                             </button>
-                              </div>
-                            </div>
+                                    </div>
+                                  </div>
                             
-                          <div className="table-wrapper">
-                            <table className="data-table">
-                              <thead>
-                                <tr>
+                                  <div className="table-wrapper">
+                                    <table className="data-table">
+                                      <thead>
+                                        <tr>
                                     <th>
                                     <input
                                       type="checkbox"
@@ -3747,9 +5074,9 @@ const K8sClusterDetail = () => {
                                   <th>{t('k8s.createdAt')}</th>
                                   <th>{t('k8s.updatedAt')}</th>
                                   <th>{t('common.actions')}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
                                 {statefulSets
                                   .filter((s) => {
                                     if (!workloadSearchTerm) return true
@@ -3771,7 +5098,7 @@ const K8sClusterDetail = () => {
                                               }
                                             }}
                                           />
-                                            </td>
+                                              </td>
                                         <td className="name-cell">
                                 <button
                                             className="deployment-link"
@@ -3793,91 +5120,91 @@ const K8sClusterDetail = () => {
                                               {Object.keys(s.labels).length > 3 && (
                                                 <span className="label-more">+{Object.keys(s.labels).length - 3}</span>
                                     )}
-                                          </div>
+                                  </div>
                                           ) : (
                                             '-'
                                           )}
-                                        </td>
+                                          </td>
                                       <td>
                                           {(s.readyReplicas ?? s.ready_replicas ?? 0)}/{(s.replicas ?? 0)}
-                                        </td>
+                                            </td>
                                         <td className="images-cell">
                                           {s.image || (Array.isArray(s.images) && s.images.length ? s.images[0] : '-')}
                                             </td>
                                         <td>{s.created_at || s.createdAt ? new Date(s.created_at || s.createdAt).toLocaleString('zh-CN') : '-'}</td>
                                         <td>{s.updated_at || s.updatedAt ? new Date(s.updated_at || s.updatedAt).toLocaleString('zh-CN') : '-'}</td>
-                                        <td>
-                                          <div className="action-buttons">
+                                            <td>
+                                              <div className="action-buttons">
                                             <button className="btn-text" onClick={() => handleStatefulSetClick(s)}>
                                               详情
-                                            </button>
+                              </button>
                                             <button className="btn-text" onClick={() => handleEditStatefulSetLabels(s)}>
-                                              {t('common.edit')}
-                                            </button>
+                                {t('common.edit')}
+                              </button>
                                             <button className="btn-text" onClick={() => handleScaleStatefulSet(s)}>
-                                              {t('k8s.scale')}
-                                            </button>
-                                            <div className="action-dropdown">
-                                              <button 
+                                {t('k8s.scale')}
+                              </button>
+                              <div className="action-dropdown">
+                                <button 
                                                 className="btn-text btn-more"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
                                                     if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
-                                                      menu.classList.remove('show')
-                                                    }
-                                                  })
+                                        menu.classList.remove('show')
+                                      }
+                                    })
                                                   const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
-                                                    dropdown.classList.toggle('show')
-                                                }}
-                                              >
+                                      dropdown.classList.toggle('show')
+                                  }}
+                                >
                                                 ⋮
-                                              </button>
-                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
-                                                <button onClick={() => {
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                </button>
+                                <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 监控功能暂不开放
                                   }} disabled>
-                                                  {t('k8s.monitoring')}
-                                                </button>
-                                                <button onClick={() => {
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    {t('k8s.monitoring')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 智能优化功能暂不开放
                                   }} disabled>
                                     {t('k8s.intelligentOptimization')}
-                                                </button>
-                                                <button onClick={() => {
+                                  </button>
+                                  <button onClick={() => {
                                     handleEditStatefulSetYaml(s)
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                }}>
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
                                     {t('k8s.yamlEdit')}
-                                                </button>
-                                                <button onClick={() => {
+                                  </button>
+                                  <button onClick={() => {
                                     handleRedeployStatefulSet(s)
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                }}>
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
                                     {t('k8s.redeploy')}
-                                                </button>
-                                                <button onClick={() => {
+                                  </button>
+                                  <button onClick={() => {
                                     handleEditStatefulSetLabels(s)
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                }}>
-                                                  {t('k8s.editLabels')}
-                                                </button>
-                                                <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.editLabels')}
+                                  </button>
+                                  <button onClick={() => {
                                     handleEditStatefulSetAnnotations(s)
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                }}>
-                                                  {t('k8s.editAnnotations')}
-                                                </button>
-                                                <button onClick={() => {
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
+                                    {t('k8s.editAnnotations')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 节点亲和性功能暂不开放
                                   }} disabled>
-                                                  {t('k8s.nodeAffinity')}
-                                                </button>
-                                                <button onClick={() => {
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    {t('k8s.nodeAffinity')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 弹性伸缩功能暂不开放
                                   }} disabled>
                                     {t('k8s.elasticScaling')}
@@ -3886,23 +5213,23 @@ const K8sClusterDetail = () => {
                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 调度容忍功能暂不开放
                                   }} disabled>
-                                                  {t('k8s.schedulingToleration')}
-                                                </button>
-                                                <button onClick={() => {
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                    {t('k8s.schedulingToleration')}
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 资源画像功能暂不开放
                                   }} disabled>
-                                                  {t('k8s.resourceProfile')}
-                                                </button>
-                                                <button onClick={() => {
+                                    {t('k8s.resourceProfile')}
+                                  </button>
+                                  <button onClick={() => {
                                     handleStatefulSetClick(s)
                                     setTimeout(() => setStatefulSetDetailTab('cost'), 100)
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
-                                                }}>
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  }}>
                                     {t('k8s.costInsight')}
-                                                </button>
-                                                <button onClick={() => {
-                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                  </button>
+                                  <button onClick={() => {
+                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 升级策略功能暂不开放
                                   }} disabled>
                                     {t('k8s.upgradeStrategy')}
@@ -3911,8 +5238,8 @@ const K8sClusterDetail = () => {
                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 复制创建功能暂不开放
                                   }} disabled>
-                                                  {t('k8s.cloneCreate')}
-                                                </button>
+                                    {t('k8s.cloneCreate')}
+                                  </button>
                                   <button onClick={() => {
                                     document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                     // 回滚功能暂不开放
@@ -3930,10 +5257,10 @@ const K8sClusterDetail = () => {
                                       document.querySelector('.dropdown-menu.show')?.classList.remove('show')
                                   }}>
                                     {t('common.delete')}
-                                                </button>
-                                              </div>
-                                            </div>
-                                          </div>
+                                  </button>
+                                </div>
+                              </div>
+                        </div>
                                         </td>
                                     </tr>
                                     )
@@ -3945,7 +5272,7 @@ const K8sClusterDetail = () => {
                                 )}
                               </tbody>
                             </table>
-                          </div>
+                      </div>
 
                           {selectedStatefulSets.length > 0 && (
                             <div className="batch-actions">
@@ -3974,7 +5301,7 @@ const K8sClusterDetail = () => {
                               >
                                 批量重新部署({selectedStatefulSets.length})
                               </button>
-                                          </div>
+                                </div>
                           )}
 
                           {!loading && statefulSets.length > 0 && (
@@ -3994,8 +5321,922 @@ const K8sClusterDetail = () => {
                           }}
                         />
                                             )}
-                                          </div>
+                                </div>
                                     )}
+
+                      {/* 守护进程集 DaemonSet 列表 */}
+                      {workloadType === 'daemonsets' && !searchParams.get('view') && (
+                        <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>守护进程集 <span className="deployment-subtitle">DaemonSet</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                            <button
+                                className="btn-primary" 
+                                onClick={() => {
+                                  // TODO: 实现创建 DaemonSet 功能
+                                  setError('创建 DaemonSet 功能暂未实现')
+                                }}
+                              >
+                                使用镜像创建
+                            </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                            </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedWorkloadNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedWorkloadNamespace(newNamespace)
+                                    setWorkloadsPage(1)
+                                    fetchDaemonSets(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">{t('k8s.allNamespaces')}</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">{t('k8s.name')}</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder={t('k8s.searchPlaceholder')}
+                                    value={workloadSearchTerm}
+                                    onChange={(e) => setWorkloadSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchDaemonSets(selectedWorkloadNamespace || '')
+                                      }
+                                    }}
+                                  />
+                            <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchDaemonSets(selectedWorkloadNamespace || '')}
+                            >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                            </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="icon-btn" disabled title="设置">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.56 3.76 2.2 2.2 0 0 1-1.56-.64l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V22a2.2 2.2 0 0 1-4.4 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 1 1-3.12-3.12l.04-.04A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H2a2.2 2.2 0 0 1 0-4.4h-.06A1.8 1.8 0 0 0 3.6 8.4a1.8 1.8 0 0 0 .36-1.98l-.04-.04A2.2 2.2 0 1 1 7.04 3.2l.04.04A1.8 1.8 0 0 0 9.06 3.6a1.8 1.8 0 0 0 1.1-1.66V2a2.2 2.2 0 0 1 4.4 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 1 1 3.12 3.12l-.04.04A1.8 1.8 0 0 0 20.4 8.4a1.8 1.8 0 0 0 1.66 1.1H22a2.2 2.2 0 0 1 0 4.4h-.06a1.8 1.8 0 0 0-1.66 1.1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </button>
+                            <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchDaemonSets(selectedWorkloadNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </button>
+                            </div>
+                          </div>
+
+                              <div className="table-wrapper">
+                                <table className="data-table">
+                                  <thead>
+                                    <tr>
+                                      <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>标签</th>
+                                  <th>容器组数量</th>
+                                      <th>{t('k8s.image')}</th>
+                                      <th>{t('k8s.createdAt')}</th>
+                                      <th>{t('common.actions')}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                {daemonSets
+                                  .filter((ds) => {
+                                    if (!workloadSearchTerm) return true
+                                    return (ds.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                  })
+                                  .map((ds) => {
+                                    const key = `${ds.namespace}/${ds.name}`
+                                    return (
+                                      <tr key={key}>
+                                        <td className="name-cell">
+                                          {ds.name}
+                                        </td>
+                                        <td>{ds.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {ds.labels && Object.keys(ds.labels).length > 0 ? (
+                                            <div className="labels-container">
+                                              {Object.entries(ds.labels).slice(0, 3).map(([key, value]) => (
+                                                <span key={key} className="label-tag">
+                                                  {key}:{value}
+                                            </span>
+                                              ))}
+                                              {Object.keys(ds.labels).length > 3 && (
+                                                <span className="label-more">+{Object.keys(ds.labels).length - 3}</span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            '-'
+                                          )}
+                                          </td>
+                                          <td>
+                                          {(ds.readyReplicas ?? ds.ready_replicas ?? 0)}/{(ds.replicas ?? ds.desiredNumberScheduled ?? 0)}
+                                          </td>
+                                        <td className="images-cell">
+                                          {Array.isArray(ds.images) && ds.images.length > 0 ? (
+                                              <div>
+                                              {ds.images.map((img, idx) => (
+                                                <div key={idx}>{img}</div>
+                                              ))}
+                                              </div>
+                                          ) : (ds.image ? (
+                                            <div>{ds.image}</div>
+                                          ) : '-')}
+                                          </td>
+                                        <td>{ds.created_at || ds.createdAt ? new Date(ds.created_at || ds.createdAt).toLocaleString('zh-CN') : '-'}</td>
+                                          <td>
+                                            <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现 DaemonSet 详情功能
+                                              setError('DaemonSet 详情功能暂未实现')
+                                            }}>
+                                              详情
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现编辑 DaemonSet 功能
+                                              setError('编辑 DaemonSet 功能暂未实现')
+                                            }}>
+                                              {t('common.edit')}
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现监控功能
+                                            }} disabled>
+                                              {t('k8s.monitoring')}
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button 
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                  dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.monitoring')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.intelligentOptimization')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.yamlEdit')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.redeploy')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.editAnnotations')}
+                                                </button>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                    // TODO: 实现删除 DaemonSet 功能
+                                                    if (window.confirm(t('k8s.confirmDeleteDaemonSet'))) {
+                                                      setError('删除 DaemonSet 功能暂未实现')
+                                                    }
+                                                  }}
+                                                >
+                                                  {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                    )
+                                  })}
+                                {daemonSets.length === 0 && (
+                                  <tr>
+                                    <td colSpan="7" className="empty-state">{t('k8s.noDaemonSets')}</td>
+                                  </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                          {!loading && daemonSets.length > 0 && (
+                            <Pagination
+                              currentPage={workloadsPage}
+                              totalPages={Math.ceil(workloadsTotal / workloadsPageSize)}
+                              totalItems={workloadsTotal}
+                              pageSize={workloadsPageSize}
+                              onPageChange={(page) => {
+                                setWorkloadsPage(page)
+                                fetchDaemonSets(selectedWorkloadNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setWorkloadsPageSize(newSize)
+                                setWorkloadsPage(1)
+                                fetchDaemonSets(selectedWorkloadNamespace || '')
+                              }}
+                            />
+                          )}
+                                      </div>
+                                    )}
+
+                      {/* 任务 Job 列表 */}
+                      {workloadType === 'jobs' && !searchParams.get('view') && (
+                        <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>任务 <span className="deployment-subtitle">Job</span></h2>
+                                  </div>
+                                  </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary" 
+                                onClick={() => {
+                                  // TODO: 实现创建 Job 功能
+                                  setError('创建 Job 功能暂未实现')
+                                }}
+                              >
+                                使用镜像创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedWorkloadNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedWorkloadNamespace(newNamespace)
+                                    setWorkloadsPage(1)
+                                    fetchJobs(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">{t('k8s.allNamespaces')}</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">{t('k8s.name')}</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                <input
+                                    className="toolbar-search-input"
+                                    placeholder={t('k8s.searchPlaceholder')}
+                                  value={workloadSearchTerm}
+                                  onChange={(e) => setWorkloadSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchJobs(selectedWorkloadNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchJobs(selectedWorkloadNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="icon-btn" disabled title="设置">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.56 3.76 2.2 2.2 0 0 1-1.56-.64l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V22a2.2 2.2 0 0 1-4.4 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 1 1-3.12-3.12l.04-.04A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H2a2.2 2.2 0 0 1 0-4.4h-.06A1.8 1.8 0 0 0 3.6 8.4a1.8 1.8 0 0 0 .36-1.98l-.04-.04A2.2 2.2 0 1 1 7.04 3.2l.04.04A1.8 1.8 0 0 0 9.06 3.6a1.8 1.8 0 0 0 1.1-1.66V2a2.2 2.2 0 0 1 4.4 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 1 1 3.12 3.12l-.04.04A1.8 1.8 0 0 0 20.4 8.4a1.8 1.8 0 0 0 1.66 1.1H22a2.2 2.2 0 0 1 0 4.4h-.06a1.8 1.8 0 0 0-1.66 1.1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchJobs(selectedWorkloadNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                              </div>
+                            </div>
+                            
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedJobs.length > 0 && selectedJobs.length === jobs.filter((job) => {
+                                        if (!workloadSearchTerm) return true
+                                        return (job.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                      }).length}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const filteredJobs = jobs.filter((job) => {
+                                            if (!workloadSearchTerm) return true
+                                            return (job.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                          })
+                                          setSelectedJobs(filteredJobs.map(job => `${job.namespace}/${job.name}`))
+                                        } else {
+                                          setSelectedJobs([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                  <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>标签</th>
+                                  <th>状态(全部)</th>
+                                  <th>Pod 状态</th>
+                                  <th>{t('k8s.image')}</th>
+                                  <th>{t('k8s.createdAt')}</th>
+                                  <th>完成时间</th>
+                                  <th>{t('common.actions')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {jobs
+                                  .filter((job) => {
+                                    if (!workloadSearchTerm) return true
+                                    return (job.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                  })
+                                  .map((job) => {
+                                    const key = `${job.namespace}/${job.name}`
+                                    const isSelected = selectedJobs.includes(key)
+                                    const activePods = job.activePods || job.active_pods || 0
+                                    const succeededPods = job.succeededPods || job.succeeded_pods || 0
+                                    const failedPods = job.failedPods || job.failed_pods || 0
+                                    const status = job.status || job.phase || 'Unknown'
+                                    const statusText = status === 'Complete' || status === 'Succeeded' ? '已成功' : 
+                                                      status === 'Failed' ? '已失败' : 
+                                                      status === 'Active' || status === 'Running' ? '运行中' : status
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedJobs([...selectedJobs, key])
+                                              } else {
+                                                setSelectedJobs(selectedJobs.filter(k => k !== key))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">
+                                          {job.name}
+                                        </td>
+                                        <td>{job.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {job.labels && Object.keys(job.labels).length > 0 ? (
+                                            <div className="labels-container">
+                                              {Object.entries(job.labels).slice(0, 3).map(([key, value]) => (
+                                                <span key={key} className="label-tag">
+                                                  {key}:{value}
+                                                </span>
+                                              ))}
+                                              {Object.keys(job.labels).length > 3 && (
+                                                <span className="label-more">+{Object.keys(job.labels).length - 3}</span>
+                                              )}
+                                          </div>
+                                          ) : (
+                                            '-'
+                                          )}
+                                        </td>
+                                        <td>
+                                          <span className={`status-badge ${status === 'Complete' || status === 'Succeeded' ? 'status-success' : status === 'Failed' ? 'status-error' : 'status-running'}`}>
+                                            {statusText}
+                                          </span>
+                                        </td>
+                                        <td>
+                                          活跃{activePods} 成功{succeededPods} 失败{failedPods}
+                                        </td>
+                                        <td className="images-cell">
+                                          {Array.isArray(job.images) && job.images.length > 0 ? (
+                                            <div>
+                                              {job.images.map((img, idx) => (
+                                                <div key={idx}>{img}</div>
+                                              ))}
+                                          </div>
+                                          ) : (job.image ? (
+                                            <div>{job.image}</div>
+                                          ) : '-')}
+                                        </td>
+                                        <td>{job.created_at || job.createdAt ? new Date(job.created_at || job.createdAt).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>{job.completion_time || job.completionTime ? new Date(job.completion_time || job.completionTime).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现 Job 详情功能
+                                              setError('Job 详情功能暂未实现')
+                                            }}>
+                                              详情
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现 YAML 编辑功能
+                                              setError('YAML 编辑功能暂未实现')
+                                            }}>
+                                              YAML 编辑
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现伸缩功能
+                                              setError('Job 伸缩功能暂未实现')
+                                            }}>
+                                              {t('k8s.scale')}
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button 
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                    dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.monitoring')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.intelligentOptimization')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.yamlEdit')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.redeploy')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.editAnnotations')}
+                                                </button>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                    // TODO: 实现删除 Job 功能
+                                                    if (window.confirm(t('k8s.confirmDeleteJob'))) {
+                                                      setError('删除 Job 功能暂未实现')
+                                                    }
+                                                  }}
+                                                >
+                                                  {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                    </tr>
+                                    )
+                                  })}
+                                {jobs.length === 0 && (
+                                  <tr>
+                                    <td colSpan="10" className="empty-state">{t('k8s.noJobs')}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {selectedJobs.length > 0 && (
+                            <div className="batch-actions" style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px' }}>
+                              <button 
+                                className="btn-secondary" 
+                                onClick={() => {
+                                  // TODO: 实现批量删除功能
+                                  if (window.confirm(`确定要删除选中的 ${selectedJobs.length} 个 Job 吗？`)) {
+                                    setError('批量删除 Job 功能暂未实现')
+                                  }
+                                }}
+                              >
+                                批量删除({selectedJobs.length})
+                              </button>
+                            </div>
+                          )}
+
+                          {!loading && jobs.length > 0 && (
+                            <Pagination
+                              currentPage={workloadsPage}
+                              totalPages={Math.ceil(workloadsTotal / workloadsPageSize)}
+                              totalItems={workloadsTotal}
+                              pageSize={workloadsPageSize}
+                              onPageChange={(page) => {
+                                setWorkloadsPage(page)
+                                fetchJobs(selectedWorkloadNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setWorkloadsPageSize(newSize)
+                                setWorkloadsPage(1)
+                                fetchJobs(selectedWorkloadNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* 定时任务 CronJob 列表 */}
+                      {workloadType === 'cronjobs' && !searchParams.get('view') && (
+                        <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>定时任务 <span className="deployment-subtitle">CronJob</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary" 
+                                onClick={() => {
+                                  // TODO: 实现创建 CronJob 功能
+                                  setError('创建 CronJob 功能暂未实现')
+                                }}
+                              >
+                                使用镜像创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedWorkloadNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedWorkloadNamespace(newNamespace)
+                                    setWorkloadsPage(1)
+                                    fetchCronJobs(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">{t('k8s.allNamespaces')}</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <select className="toolbar-select" value="name" disabled>
+                                  <option value="name">{t('k8s.name')}</option>
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder={t('k8s.searchPlaceholder')}
+                                    value={workloadSearchTerm}
+                                    onChange={(e) => setWorkloadSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchCronJobs(selectedWorkloadNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchCronJobs(selectedWorkloadNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button className="icon-btn" disabled title="设置">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.5"/>
+                                  <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.04.04a2.2 2.2 0 0 1-1.56 3.76 2.2 2.2 0 0 1-1.56-.64l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V22a2.2 2.2 0 0 1-4.4 0v-.06a1.8 1.8 0 0 0-1.1-1.66 1.8 1.8 0 0 0-1.98.36l-.04.04a2.2 2.2 0 1 1-3.12-3.12l.04-.04A1.8 1.8 0 0 0 3.6 15a1.8 1.8 0 0 0-1.66-1.1H2a2.2 2.2 0 0 1 0-4.4h-.06A1.8 1.8 0 0 0 3.6 8.4a1.8 1.8 0 0 0 .36-1.98l-.04-.04A2.2 2.2 0 1 1 7.04 3.2l.04.04A1.8 1.8 0 0 0 9.06 3.6a1.8 1.8 0 0 0 1.1-1.66V2a2.2 2.2 0 0 1 4.4 0v.06a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.04-.04a2.2 2.2 0 1 1 3.12 3.12l-.04.04A1.8 1.8 0 0 0 20.4 8.4a1.8 1.8 0 0 0 1.66 1.1H22a2.2 2.2 0 0 1 0 4.4h-.06a1.8 1.8 0 0 0-1.66 1.1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchCronJobs(selectedWorkloadNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedCronJobs.length > 0 && selectedCronJobs.length === cronJobs.filter((cronJob) => {
+                                        if (!workloadSearchTerm) return true
+                                        return (cronJob.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                      }).length}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const filteredCronJobs = cronJobs.filter((cronJob) => {
+                                            if (!workloadSearchTerm) return true
+                                            return (cronJob.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                          })
+                                          setSelectedCronJobs(filteredCronJobs.map(cronJob => `${cronJob.namespace}/${cronJob.name}`))
+                                        } else {
+                                          setSelectedCronJobs([])
+                                        }
+                                      }}
+                                    />
+                                  </th>
+                                  <th>{t('k8s.name')}</th>
+                                  <th>{t('k8s.namespace')}</th>
+                                  <th>标签</th>
+                                  <th>{t('k8s.image')}</th>
+                                  <th>{t('k8s.createdAt')}</th>
+                                  <th>最近调度</th>
+                                  <th>挂起</th>
+                                  <th>计划</th>
+                                  <th>活跃</th>
+                                  <th>{t('common.actions')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {cronJobs
+                                  .filter((cronJob) => {
+                                    if (!workloadSearchTerm) return true
+                                    return (cronJob.name || '').toLowerCase().includes(workloadSearchTerm.toLowerCase())
+                                  })
+                                  .map((cronJob) => {
+                                    const key = `${cronJob.namespace}/${cronJob.name}`
+                                    const isSelected = selectedCronJobs.includes(key)
+                                    const activeJobs = cronJob.activeJobs || cronJob.active_jobs || 0
+                                    const suspended = cronJob.suspended !== undefined ? cronJob.suspended : (cronJob.suspend !== undefined ? cronJob.suspend : false)
+                                    const schedule = cronJob.schedule || cronJob.cron || '-'
+                                    const lastScheduleTime = cronJob.lastScheduleTime || cronJob.last_schedule_time || cronJob.lastSchedule || cronJob.last_schedule
+                                    return (
+                                      <tr key={key}>
+                                        <td>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                setSelectedCronJobs([...selectedCronJobs, key])
+                                              } else {
+                                                setSelectedCronJobs(selectedCronJobs.filter(k => k !== key))
+                                              }
+                                            }}
+                                          />
+                                        </td>
+                                        <td className="name-cell">
+                                          {cronJob.name}
+                                        </td>
+                                        <td>{cronJob.namespace || '-'}</td>
+                                        <td className="labels-cell">
+                                          {cronJob.labels && Object.keys(cronJob.labels).length > 0 ? (
+                                            <div className="labels-container">
+                                              {Object.entries(cronJob.labels).slice(0, 3).map(([key, value]) => (
+                                                <span key={key} className="label-tag">
+                                                  {key}:{value}
+                                                </span>
+                                              ))}
+                                              {Object.keys(cronJob.labels).length > 3 && (
+                                                <span className="label-more">+{Object.keys(cronJob.labels).length - 3}</span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            '-'
+                                          )}
+                                        </td>
+                                        <td className="images-cell">
+                                          {Array.isArray(cronJob.images) && cronJob.images.length > 0 ? (
+                                            <div>
+                                              {cronJob.images.map((img, idx) => (
+                                                <div key={idx}>{img}</div>
+                                              ))}
+                                            </div>
+                                          ) : (cronJob.image ? (
+                                            <div>{cronJob.image}</div>
+                                          ) : '-')}
+                                        </td>
+                                        <td>{cronJob.created_at || cronJob.createdAt ? new Date(cronJob.created_at || cronJob.createdAt).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>{lastScheduleTime ? new Date(lastScheduleTime).toLocaleString('zh-CN') : '-'}</td>
+                                        <td>{suspended ? 'True' : 'False'}</td>
+                                        <td>{schedule}</td>
+                                        <td>{activeJobs}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现 CronJob 详情功能
+                                              setError('CronJob 详情功能暂未实现')
+                                            }}>
+                                              详情
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现 YAML 编辑功能
+                                              setError('YAML 编辑功能暂未实现')
+                                            }}>
+                                              YAML 编辑
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              // TODO: 实现停止功能
+                                              setError('停止 CronJob 功能暂未实现')
+                                            }}>
+                                              停止
+                                            </button>
+                                            <div className="action-dropdown">
+                                              <button 
+                                                className="btn-text btn-more"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                                                    if (menu !== e.target.closest('.action-dropdown').querySelector('.dropdown-menu')) {
+                                                      menu.classList.remove('show')
+                                                    }
+                                                  })
+                                                  const dropdown = e.target.closest('.action-dropdown').querySelector('.dropdown-menu')
+                                                  dropdown.classList.toggle('show')
+                                                }}
+                                              >
+                                                ⋮
+                                              </button>
+                                              <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.monitoring')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.intelligentOptimization')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.yamlEdit')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.redeploy')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.editLabels')}
+                                                </button>
+                                                <button onClick={() => {
+                                                  document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                }} disabled>
+                                                  {t('k8s.editAnnotations')}
+                                                </button>
+                                                <button
+                                                  className="danger"
+                                                  onClick={() => {
+                                                    document.querySelector('.dropdown-menu.show')?.classList.remove('show')
+                                                    // TODO: 实现删除 CronJob 功能
+                                                    if (window.confirm(t('k8s.confirmDeleteCronJob'))) {
+                                                      setError('删除 CronJob 功能暂未实现')
+                                                    }
+                                                  }}
+                                                >
+                                                  {t('common.delete')}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {cronJobs.length === 0 && (
+                                  <tr>
+                                    <td colSpan="11" className="empty-state">{t('k8s.noCronJobs')}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {selectedCronJobs.length > 0 && (
+                            <div className="batch-actions" style={{ marginTop: '16px', padding: '12px', background: '#f5f5f5', borderRadius: '4px' }}>
+                              <button 
+                                className="btn-secondary" 
+                                onClick={() => {
+                                  // TODO: 实现批量删除功能
+                                  if (window.confirm(`确定要删除选中的 ${selectedCronJobs.length} 个 CronJob 吗？`)) {
+                                    setError('批量删除 CronJob 功能暂未实现')
+                                  }
+                                }}
+                              >
+                                批量删除({selectedCronJobs.length})
+                              </button>
+                            </div>
+                          )}
+
+                          {!loading && cronJobs.length > 0 && (
+                            <Pagination
+                              currentPage={workloadsPage}
+                              totalPages={Math.ceil(workloadsTotal / workloadsPageSize)}
+                              totalItems={workloadsTotal}
+                              pageSize={workloadsPageSize}
+                              onPageChange={(page) => {
+                                setWorkloadsPage(page)
+                                fetchCronJobs(selectedWorkloadNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setWorkloadsPageSize(newSize)
+                                setWorkloadsPage(1)
+                                fetchCronJobs(selectedWorkloadNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
 
                       {/* 容器组 Pod 列表 */}
                       {workloadType === 'pods' && !searchParams.get('view') && (
