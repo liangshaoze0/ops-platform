@@ -202,6 +202,26 @@ const Sidebar = () => {
               path: `/k8s/cluster/${clusterId}?tab=storage`,
               label: t('k8s.storage'),
               tab: 'storage',
+              children: [
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=storage&storageSubtab=pvcs`,
+                  label: '存储声明',
+                  tab: 'storage',
+                  storageSubtab: 'pvcs',
+                },
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=storage&storageSubtab=pvs`,
+                  label: '存储卷',
+                  tab: 'storage',
+                  storageSubtab: 'pvs',
+                },
+                {
+                  path: `/k8s/cluster/${clusterId}?tab=storage&storageSubtab=storageclasses`,
+                  label: '存储类',
+                  tab: 'storage',
+                  storageSubtab: 'storageclasses',
+                },
+              ],
             },
             {
               path: `/k8s/cluster/${clusterId}?tab=application`,
@@ -292,6 +312,7 @@ const Sidebar = () => {
                   const currentSubtab = searchParams.get('subtab')
                   const currentNetworkSubtab = searchParams.get('networkSubtab')
                   const currentConfigSubtab = searchParams.get('configSubtab')
+                  const currentStorageSubtab = searchParams.get('storageSubtab')
                   if (grandchild.tab === currentTab) {
                     // 如果有 type 参数，检查 type 匹配
                     if (currentType) {
@@ -311,6 +332,11 @@ const Sidebar = () => {
                     } else if (currentConfigSubtab) {
                       // 如果有 configSubtab 参数，检查 configSubtab 匹配
                       if (grandchild.children && grandchild.children.some(gc => gc.configSubtab === currentConfigSubtab)) {
+                        setExpandedSubMenus((prev) => ({ ...prev, [grandchild.path]: true }))
+                      }
+                    } else if (currentStorageSubtab) {
+                      // 如果有 storageSubtab 参数，检查 storageSubtab 匹配
+                      if (grandchild.children && grandchild.children.some(gc => gc.storageSubtab === currentStorageSubtab)) {
                         setExpandedSubMenus((prev) => ({ ...prev, [grandchild.path]: true }))
                       }
                     } else {
@@ -355,6 +381,8 @@ const Sidebar = () => {
         if (child.children[0]?.children) {
           const currentSubtab = searchParams.get('subtab')
           const currentNetworkSubtab = searchParams.get('networkSubtab')
+          const currentConfigSubtab = searchParams.get('configSubtab')
+          const currentStorageSubtab = searchParams.get('storageSubtab')
           // 四级菜单：检查type、subtab或networkSubtab参数
           return child.children.some((grandchild) => {
             if (grandchild.children) {
@@ -365,6 +393,10 @@ const Sidebar = () => {
                   return greatGrandchild.subtab === currentSubtab
                 } else if (currentNetworkSubtab) {
                   return greatGrandchild.networkSubtab === currentNetworkSubtab
+                } else if (currentConfigSubtab) {
+                  return greatGrandchild.configSubtab === currentConfigSubtab
+                } else if (currentStorageSubtab) {
+                  return greatGrandchild.storageSubtab === currentStorageSubtab
                 }
                 return false
               })
@@ -376,10 +408,25 @@ const Sidebar = () => {
         // 三级菜单：检查tab参数
         return child.children.some((grandchild) => {
           if (grandchild.tab === currentTab || (!currentTab && grandchild.tab === 'info')) {
+            // 如果有 subtab 参数，需要进一步检查（用于 security）
+            if (grandchild.subtab) {
+              const currentSubtab = searchParams.get('subtab') || 'authorization'
+              return grandchild.subtab === currentSubtab
+            }
             // 如果有 networkSubtab 参数，需要进一步检查
             if (grandchild.networkSubtab) {
               const currentNetworkSubtab = searchParams.get('networkSubtab') || 'services'
               return grandchild.networkSubtab === currentNetworkSubtab
+            }
+            // 如果有 configSubtab 参数，需要进一步检查
+            if (grandchild.configSubtab) {
+              const currentConfigSubtab = searchParams.get('configSubtab') || 'configmaps'
+              return grandchild.configSubtab === currentConfigSubtab
+            }
+            // 如果有 storageSubtab 参数，需要进一步检查
+            if (grandchild.storageSubtab) {
+              const currentStorageSubtab = searchParams.get('storageSubtab') || 'pvcs'
+              return grandchild.storageSubtab === currentStorageSubtab
             }
             return true
           }
@@ -579,10 +626,25 @@ const Sidebar = () => {
                                       
                                       // 三级菜单项（无四级菜单）
                                       let isGrandchildActive = grandchild.tab === currentTab && isChildActive
+                                      // 检查 subtab 参数（用于 security）
+                                      if (grandchild.subtab) {
+                                        const currentSubtab = searchParams.get('subtab') || 'authorization'
+                                        isGrandchildActive = grandchild.subtab === currentSubtab && isChildActive
+                                      }
                                       // 检查 networkSubtab 参数
                                       if (grandchild.networkSubtab) {
                                         const currentNetworkSubtab = searchParams.get('networkSubtab') || 'services'
                                         isGrandchildActive = grandchild.networkSubtab === currentNetworkSubtab && isChildActive
+                                      }
+                                      // 检查 configSubtab 参数
+                                      if (grandchild.configSubtab) {
+                                        const currentConfigSubtab = searchParams.get('configSubtab') || 'configmaps'
+                                        isGrandchildActive = grandchild.configSubtab === currentConfigSubtab && isChildActive
+                                      }
+                                      // 检查 storageSubtab 参数
+                                      if (grandchild.storageSubtab) {
+                                        const currentStorageSubtab = searchParams.get('storageSubtab') || 'pvcs'
+                                        isGrandchildActive = grandchild.storageSubtab === currentStorageSubtab && isChildActive
                                       }
                                       return (
                                         <li key={grandchild.path} className="subsubmenu-item">

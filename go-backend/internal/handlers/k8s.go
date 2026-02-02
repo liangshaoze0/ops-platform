@@ -2400,6 +2400,195 @@ func (h *K8sHandler) GetPVCs(c *gin.Context) {
 	}
 }
 
+// GetPVs 获取PV列表
+func (h *K8sHandler) GetPVs(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	pvs, err := client.GetPersistentVolumes(ctx)
+	if err != nil {
+		utils.InternalServerError(c, "获取PV列表失败: "+err.Error())
+		return
+	}
+
+	var pvList []map[string]interface{}
+	for _, pv := range pvs {
+		accessModes := make([]string, 0)
+		for _, mode := range pv.Spec.AccessModes {
+			accessModes = append(accessModes, string(mode))
+		}
+
+		capacity := ""
+		if pv.Spec.Capacity != nil {
+			if storage, ok := pv.Spec.Capacity[corev1.ResourceStorage]; ok {
+				capacity = storage.String()
+			}
+		}
+
+		// 获取回收策略
+		reclaimPolicy := string(pv.Spec.PersistentVolumeReclaimPolicy)
+
+		// 获取存储类
+		storageClass := pv.Spec.StorageClassName
+
+		// 获取绑定存储声明信息
+		claimNamespace := ""
+		claimName := ""
+		if pv.Spec.ClaimRef != nil {
+			claimNamespace = pv.Spec.ClaimRef.Namespace
+			claimName = pv.Spec.ClaimRef.Name
+		}
+
+		pvInfo := map[string]interface{}{
+			"name":          pv.Name,
+			"capacity":      capacity,
+			"size":          capacity,
+			"accessModes":   accessModes,
+			"accessMode":    strings.Join(accessModes, ", "),
+			"reclaimPolicy": reclaimPolicy,
+			"recyclePolicy": reclaimPolicy,
+			"status":        string(pv.Status.Phase),
+			"storageClass":  storageClass,
+			"storageType":   storageClass,
+			"claimRef": map[string]interface{}{
+				"namespace": claimNamespace,
+				"name":      claimName,
+			},
+			"claimNamespace": claimNamespace,
+			"claimName":      claimName,
+			"volumeName":     pv.Name,
+			"volume":         pv.Name,
+			"created_at":     pv.CreationTimestamp.Time,
+			"createdAt":      pv.CreationTimestamp.Time,
+		}
+		pvList = append(pvList, pvInfo)
+	}
+
+	// 内存分页
+	var req struct {
+		Page     int `form:"page" binding:"omitempty,min=1"`
+		PageSize int `form:"page_size" binding:"omitempty,min=1,max=100"`
+	}
+	if err := c.ShouldBindQuery(&req); err == nil {
+		if req.Page == 0 {
+			req.Page = 1
+		}
+		if req.PageSize == 0 {
+			req.PageSize = 20
+		}
+		pagedList, total := paginateSlice(pvList, req.Page, req.PageSize)
+		utils.Success(c, gin.H{
+			"data":      pagedList,
+			"total":     total,
+			"page":      req.Page,
+			"page_size": req.PageSize,
+		})
+	} else {
+		utils.Success(c, pvList)
+	}
+}
+
+// GetStorageClasses 获取StorageClass列表
+func (h *K8sHandler) GetStorageClasses(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	clusterID := c.Param("id")
+
+	var cluster models.K8sCluster
+	if err := h.db.Where("id = ? AND user_id = ?", clusterID, userID).First(&cluster).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			utils.NotFound(c, "集群不存在")
+		} else {
+			utils.InternalServerError(c, "获取集群信息失败: "+err.Error())
+		}
+		return
+	}
+
+	client, err := k8s.NewClientFromConfig(cluster.Config)
+	if err != nil {
+		utils.BadRequest(c, "创建K8s客户端失败: "+err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	storageClasses, err := client.GetStorageClasses(ctx)
+	if err != nil {
+		utils.InternalServerError(c, "获取StorageClass列表失败: "+err.Error())
+		return
+	}
+
+	var scList []map[string]interface{}
+	for _, sc := range storageClasses {
+		// 获取回收策略
+		reclaimPolicy := string(*sc.ReclaimPolicy)
+
+		scInfo := map[string]interface{}{
+			"name":          sc.Name,
+			"provisioner":   sc.Provisioner,
+			"provider":      sc.Provisioner,
+			"parameters":    sc.Parameters,
+			"reclaimPolicy": reclaimPolicy,
+			"recyclePolicy": reclaimPolicy,
+			"created_at":    sc.CreationTimestamp.Time,
+			"createdAt":     sc.CreationTimestamp.Time,
+		}
+		scList = append(scList, scInfo)
+	}
+
+	// 内存分页
+	var req struct {
+		Page     int `form:"page" binding:"omitempty,min=1"`
+		PageSize int `form:"page_size" binding:"omitempty,min=1,max=100"`
+	}
+	if err := c.ShouldBindQuery(&req); err == nil {
+		if req.Page == 0 {
+			req.Page = 1
+		}
+		if req.PageSize == 0 {
+			req.PageSize = 20
+		}
+		pagedList, total := paginateSlice(scList, req.Page, req.PageSize)
+		utils.Success(c, gin.H{
+			"data":      pagedList,
+			"total":     total,
+			"page":      req.Page,
+			"page_size": req.PageSize,
+		})
+	} else {
+		utils.Success(c, scList)
+	}
+}
+
 // GetDeployments 获取Deployment列表
 func (h *K8sHandler) GetDeployments(c *gin.Context) {
 	userID, exists := c.Get("user_id")

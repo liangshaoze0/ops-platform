@@ -18,10 +18,12 @@ const K8sClusterDetail = () => {
   const subtabFromUrl = searchParams.get('subtab') || ''
   const configSubtabFromUrl = searchParams.get('configSubtab') || 'configmaps'
   const networkSubtabFromUrl = searchParams.get('networkSubtab') || 'services'
+  const storageSubtabFromUrl = searchParams.get('storageSubtab') || 'pvcs'
   const [activeTab, setActiveTab] = useState(tabFromUrl)
   const [activeSubtab, setActiveSubtab] = useState(subtabFromUrl)
   const [configSubtab, setConfigSubtab] = useState(configSubtabFromUrl)
   const [networkSubtab, setNetworkSubtab] = useState(networkSubtabFromUrl)
+  const [storageSubtab, setStorageSubtab] = useState(storageSubtabFromUrl)
   const [clusterInfo, setClusterInfo] = useState(null)
   const [nodes, setNodes] = useState([])
   const [namespaces, setNamespaces] = useState([])
@@ -44,6 +46,8 @@ const K8sClusterDetail = () => {
   const [configMaps, setConfigMaps] = useState([])
   const [secrets, setSecrets] = useState([])
   const [pvcs, setPvcs] = useState([])
+  const [pvs, setPvs] = useState([])
+  const [storageClasses, setStorageClasses] = useState([])
   const [deployments, setDeployments] = useState([])
   const [statefulSets, setStatefulSets] = useState([])
   const [daemonSets, setDaemonSets] = useState([])
@@ -140,6 +144,14 @@ const K8sClusterDetail = () => {
   const [pvcsPage, setPvcsPage] = useState(1)
   const [pvcsPageSize, setPvcsPageSize] = useState(20)
   const [pvcsTotal, setPvcsTotal] = useState(0)
+  const [pvsPage, setPvsPage] = useState(1)
+  const [pvsPageSize, setPvsPageSize] = useState(20)
+  const [pvsTotal, setPvsTotal] = useState(0)
+  const [storageClassesPage, setStorageClassesPage] = useState(1)
+  const [storageClassesPageSize, setStorageClassesPageSize] = useState(20)
+  const [storageClassesTotal, setStorageClassesTotal] = useState(0)
+  const [selectedStorageNamespace, setSelectedStorageNamespace] = useState('')
+  const [storageSearchTerm, setStorageSearchTerm] = useState('')
 
   // 命名空间搜索和选择状态
   const [namespaceSearchTerm, setNamespaceSearchTerm] = useState('')
@@ -342,7 +354,13 @@ const K8sClusterDetail = () => {
     if (configSubtabFromUrl !== configSubtab && tabFromUrl === 'config') {
       setConfigSubtab(configSubtabFromUrl)
     }
-  }, [searchParams])
+    
+    // 恢复存储子标签
+    const storageSubtabFromUrl = searchParams.get('storageSubtab') || 'pvcs'
+    if (storageSubtabFromUrl !== storageSubtab && (tabFromUrl === 'storage' || activeTab === 'storage')) {
+      setStorageSubtab(storageSubtabFromUrl)
+    }
+  }, [searchParams, activeTab, storageSubtab])
   
   // 确保命名空间列表已加载（用于工作负载过滤）
   useEffect(() => {
@@ -368,6 +386,10 @@ const K8sClusterDetail = () => {
       // 如果切换到非config标签，清除configSubtab参数
       if (activeTab !== 'config') {
         newParams.delete('configSubtab')
+      }
+      // 如果切换到非storage标签，清除storageSubtab参数
+      if (activeTab !== 'storage') {
+        newParams.delete('storageSubtab')
       }
       setSearchParams(newParams, { replace: true })
     }
@@ -396,6 +418,46 @@ const K8sClusterDetail = () => {
       }
     }
   }, [configSubtab, activeTab])
+  
+  // 当storageSubtab变化时，更新URL参数
+  useEffect(() => {
+    if (activeTab === 'storage') {
+      const currentStorageSubtab = searchParams.get('storageSubtab') || 'pvcs'
+      // 只有当 storageSubtab 状态与 URL 中的值不同时才更新 URL，避免循环
+      if (storageSubtab !== currentStorageSubtab) {
+        const newParams = new URLSearchParams(searchParams)
+        newParams.set('storageSubtab', storageSubtab)
+        setSearchParams(newParams, { replace: true })
+      }
+    } else {
+      // 当离开存储标签时，清除storageSubtab URL参数
+      if (searchParams.get('storageSubtab')) {
+        const newParams = new URLSearchParams(searchParams)
+        newParams.delete('storageSubtab')
+        setSearchParams(newParams, { replace: true })
+      }
+    }
+  }, [storageSubtab, activeTab])
+  
+  // 当 storageSubtab 状态更新后，确保数据被正确获取
+  useEffect(() => {
+    if (activeTab === 'storage' && id) {
+      // 如果命名空间列表为空，先获取所有命名空间列表（用于下拉框）
+      if (namespaces.length === 0) {
+        fetchAllNamespaces()
+      }
+      // 确保 storageSubtab 有值（如果为空或未定义，使用默认值 'pvcs'）
+      const currentStorageSubtab = storageSubtab || 'pvcs'
+      // 根据子标签加载数据
+      if (currentStorageSubtab === 'pvcs') {
+        fetchPVCs(selectedStorageNamespace || '')
+      } else if (currentStorageSubtab === 'pvs') {
+        fetchPVs()
+      } else if (currentStorageSubtab === 'storageclasses') {
+        fetchStorageClasses()
+      }
+    }
+  }, [storageSubtab, id, activeTab, selectedStorageNamespace])
   
   // 当selectedWorkloadNamespace变化时，更新URL参数
   useEffect(() => {
@@ -443,6 +505,10 @@ const K8sClusterDetail = () => {
       }
       // 如果切换到配置管理页面，先获取所有命名空间列表（用于下拉框）
       if (activeTab === 'config' && namespaces.length === 0) {
+        fetchAllNamespaces()
+      }
+      // 如果切换到存储页面，先获取所有命名空间列表（用于下拉框）
+      if (activeTab === 'storage' && namespaces.length === 0) {
         fetchAllNamespaces()
       }
     }
@@ -493,12 +559,17 @@ const K8sClusterDetail = () => {
           fetchSecrets(selectedConfigNamespace || '')
         }
       } else if (activeTab === 'storage') {
-        fetchPVCs()
+        // 确保 storageSubtab 有值（如果 URL 中没有，使用默认值）
+        // 数据获取由专门的 useEffect 处理（第442-458行）
+        const currentStorageSubtab = searchParams.get('storageSubtab') || 'pvcs'
+        if (currentStorageSubtab !== storageSubtab) {
+          setStorageSubtab(currentStorageSubtab)
+        }
       } else if (activeTab === 'security') {
         // 安全管理相关数据获取可以根据需要添加
       }
     }
-  }, [id, activeTab, searchParams, selectedNetworkNamespace, namespaces.length, networkSubtab])
+  }, [id, activeTab, searchParams, selectedNetworkNamespace, namespaces.length, networkSubtab, configSubtab, storageSubtab, selectedStorageNamespace, pvsPage, pvsPageSize, storageClassesPage, storageClassesPageSize])
 
   useEffect(() => {
     if (selectedNamespace) {
@@ -2021,16 +2092,18 @@ const K8sClusterDetail = () => {
     }
   }
 
-  const fetchPVCs = async () => {
+  const fetchPVCs = async (namespace = '') => {
     try {
       setLoading(true)
       setError('')
-      const response = await api.get(`/k8s/clusters/${id}/pvcs`, {
-        params: {
-          page: pvcsPage,
-          page_size: pvcsPageSize,
-        },
-      })
+      const params = {
+        page: pvcsPage,
+        page_size: pvcsPageSize,
+      }
+      if (namespace) {
+        params.namespace = namespace
+      }
+      const response = await api.get(`/k8s/clusters/${id}/pvcs`, { params })
       const data = response.data.data || response.data
       if (data.data) {
         setPvcs(data.data)
@@ -2042,6 +2115,56 @@ const K8sClusterDetail = () => {
     } catch (err) {
       console.error('获取PVC列表失败:', err)
       setError(err.response?.data?.message || t('k8s.fetchPVCsFailed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchPVs = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: pvsPage,
+        page_size: pvsPageSize,
+      }
+      const response = await api.get(`/k8s/clusters/${id}/pvs`, { params })
+      const data = response.data.data || response.data
+      if (data.data) {
+        setPvs(data.data)
+        setPvsTotal(data.total || 0)
+      } else {
+        setPvs(Array.isArray(data) ? data : [])
+        setPvsTotal(Array.isArray(data) ? data.length : 0)
+      }
+    } catch (err) {
+      console.error('获取PV列表失败:', err)
+      setError(err.response?.data?.message || t('k8s.fetchPVsFailed') || '获取存储卷列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchStorageClasses = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const params = {
+        page: storageClassesPage,
+        page_size: storageClassesPageSize,
+      }
+      const response = await api.get(`/k8s/clusters/${id}/storageclasses`, { params })
+      const data = response.data.data || response.data
+      if (data.data) {
+        setStorageClasses(data.data)
+        setStorageClassesTotal(data.total || 0)
+      } else {
+        setStorageClasses(Array.isArray(data) ? data : [])
+        setStorageClassesTotal(Array.isArray(data) ? data.length : 0)
+      }
+    } catch (err) {
+      console.error('获取StorageClass列表失败:', err)
+      setError(err.response?.data?.message || t('k8s.fetchStorageClassesFailed') || '获取存储类列表失败')
     } finally {
       setLoading(false)
     }
@@ -4591,7 +4714,574 @@ const K8sClusterDetail = () => {
 
                   {activeTab === 'storage' && (
                     <div className="storage-section">
-                      {/* 存储管理功能 */}
+                      {/* 存储声明 (PersistentVolumeClaim) 列表 */}
+                      {(storageSubtab === 'pvcs' || !storageSubtab || storageSubtab === '') && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>存储声明 <span className="deployment-subtitle">PersistentVolumeClaim</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建存储声明功能暂未实现')
+                                }}
+                              >
+                                创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <label className="toolbar-label">命名空间</label>
+                                <select
+                                  className="toolbar-select"
+                                  value={selectedStorageNamespace}
+                                  onChange={(e) => {
+                                    const newNamespace = e.target.value
+                                    setSelectedStorageNamespace(newNamespace)
+                                    setPvcsPage(1)
+                                    fetchPVCs(newNamespace || '')
+                                  }}
+                                >
+                                  <option value="">全部命名空间</option>
+                                  {namespaces.map((ns) => (
+                                    <option key={ns.name} value={ns.name}>{ns.name}</option>
+                                  ))}
+                                </select>
+
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={storageSearchTerm}
+                                    onChange={(e) => setStorageSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchPVCs(selectedStorageNamespace || '')
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchPVCs(selectedStorageNamespace || '')}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchPVCs(selectedStorageNamespace || '')}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>名称</th>
+                                  <th>命名空间</th>
+                                  <th>总量</th>
+                                  <th>访问模式</th>
+                                  <th>状态</th>
+                                  <th>存储类型</th>
+                                  <th>关联的存储卷</th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pvcs
+                                  .filter((pvc) => {
+                                    if (!storageSearchTerm) return true
+                                    return (pvc.name || '').toLowerCase().includes(storageSearchTerm.toLowerCase())
+                                  })
+                                  .map((pvc) => {
+                                    // 格式化创建时间：YYYY-MM-DD HH:MM:SS
+                                    let formattedTime = '-'
+                                    if (pvc.created_at || pvc.createdAt) {
+                                      const date = new Date(pvc.created_at || pvc.createdAt)
+                                      const year = date.getFullYear()
+                                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                                      const day = String(date.getDate()).padStart(2, '0')
+                                      const hours = String(date.getHours()).padStart(2, '0')
+                                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                                      const seconds = String(date.getSeconds()).padStart(2, '0')
+                                      formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+                                    }
+                                    
+                                    // 判断是否显示扩容按钮（根据存储类型，某些类型支持扩容）
+                                    const canScale = pvc.storageClass && (
+                                      pvc.storageClass.includes('disk') || 
+                                      pvc.storageClass.includes('alicloud-disk')
+                                    )
+                                    
+                                    return (
+                                      <tr key={`${pvc.namespace}/${pvc.name}`}>
+                                        <td className="name-cell">{pvc.name}</td>
+                                        <td>{pvc.namespace || '-'}</td>
+                                        <td>{pvc.capacity || pvc.size || '-'}</td>
+                                        <td>{Array.isArray(pvc.accessModes) ? pvc.accessModes.join(', ') : (pvc.accessModes || pvc.accessMode || '-')}</td>
+                                        <td>
+                                          <span style={{
+                                            padding: '2px 8px',
+                                            borderRadius: '2px',
+                                            fontSize: '12px',
+                                            background: pvc.status === 'Bound' ? '#f6ffed' : '#fff7e6',
+                                            color: pvc.status === 'Bound' ? '#52c41a' : '#faad14',
+                                            border: `1px solid ${pvc.status === 'Bound' ? '#b7eb8f' : '#ffe58f'}`
+                                          }}>
+                                            {pvc.status || '-'}
+                                          </span>
+                                        </td>
+                                        <td>{pvc.storageClass || pvc.storageType || '-'}</td>
+                                        <td>{pvc.volumeName || pvc.volume || '-'}</td>
+                                        <td>{formattedTime}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            {canScale && (
+                                              <button className="btn-text" onClick={() => {
+                                                setError('扩容功能暂未实现')
+                                              }}>
+                                                扩容
+                                              </button>
+                                            )}
+                                            <button className="btn-text" onClick={() => {
+                                              setError('监控功能暂未实现')
+                                            }}>
+                                              监控
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              setError('查看Yaml功能暂未实现')
+                                            }}>
+                                              查看Yaml
+                                            </button>
+                                            <button className="btn-text danger" onClick={() => {
+                                              if (window.confirm(`确定要删除存储声明 ${pvc.name} 吗？`)) {
+                                                setError('删除存储声明功能暂未实现')
+                                              }
+                                            }}>
+                                              删除
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {pvcs.length === 0 && (
+                                  <tr>
+                                    <td colSpan="9" className="empty-state">{t('k8s.noPVCs') || '暂无存储声明'}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && pvcs.length > 0 && (
+                            <Pagination
+                              currentPage={pvcsPage}
+                              totalPages={Math.ceil(pvcsTotal / pvcsPageSize)}
+                              totalItems={pvcsTotal}
+                              pageSize={pvcsPageSize}
+                              onPageChange={(page) => {
+                                setPvcsPage(page)
+                                fetchPVCs(selectedStorageNamespace || '')
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setPvcsPageSize(newSize)
+                                setPvcsPage(1)
+                                fetchPVCs(selectedStorageNamespace || '')
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* 存储卷 (PersistentVolume) 列表 */}
+                      {storageSubtab === 'pvs' && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>存储卷 <span className="deployment-subtitle">PersistentVolume</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建存储卷功能暂未实现')
+                                }}
+                              >
+                                创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={storageSearchTerm}
+                                    onChange={(e) => setStorageSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchPVs()
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchPVs()}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchPVs()}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>名称</th>
+                                  <th>总量</th>
+                                  <th>访问模式</th>
+                                  <th>回收策略</th>
+                                  <th>状态</th>
+                                  <th>存储类型</th>
+                                  <th>绑定存储声明</th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pvs
+                                  .filter((pv) => {
+                                    if (!storageSearchTerm) return true
+                                    return (pv.name || '').toLowerCase().includes(storageSearchTerm.toLowerCase())
+                                  })
+                                  .map((pv) => {
+                                    // 格式化创建时间：YYYY-MM-DD HH:MM:SS
+                                    let formattedTime = '-'
+                                    if (pv.created_at || pv.createdAt) {
+                                      const date = new Date(pv.created_at || pv.createdAt)
+                                      const year = date.getFullYear()
+                                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                                      const day = String(date.getDate()).padStart(2, '0')
+                                      const hours = String(date.getHours()).padStart(2, '0')
+                                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                                      const seconds = String(date.getSeconds()).padStart(2, '0')
+                                      formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+                                    }
+                                    
+                                    // 获取绑定存储声明信息
+                                    const claimNamespace = pv.claimRef?.namespace || pv.claimNamespace || '-'
+                                    const claimName = pv.claimRef?.name || pv.claimName || '-'
+                                    const hasClaim = claimNamespace !== '-' && claimName !== '-'
+                                    
+                                    // 判断是否显示回收站按钮（根据回收策略，Delete策略显示回收站）
+                                    const canRecycle = pv.reclaimPolicy === 'Delete' || pv.reclaimPolicy === 'Recycle'
+                                    
+                                    return (
+                                      <tr key={pv.name}>
+                                        <td className="name-cell">{pv.name}</td>
+                                        <td>{pv.capacity || pv.size || '-'}</td>
+                                        <td>{Array.isArray(pv.accessModes) ? pv.accessModes.join(', ') : (pv.accessModes || pv.accessMode || '-')}</td>
+                                        <td>{pv.reclaimPolicy || pv.recyclePolicy || '-'}</td>
+                                        <td>
+                                          <span style={{
+                                            padding: '2px 8px',
+                                            borderRadius: '2px',
+                                            fontSize: '12px',
+                                            background: pv.status === 'Bound' ? '#f6ffed' : '#fff7e6',
+                                            color: pv.status === 'Bound' ? '#52c41a' : '#faad14',
+                                            border: `1px solid ${pv.status === 'Bound' ? '#b7eb8f' : '#ffe58f'}`
+                                          }}>
+                                            {pv.status || '-'}
+                                          </span>
+                                        </td>
+                                        <td>{pv.storageClass || pv.storageType || '-'}</td>
+                                        <td>
+                                          {hasClaim ? (
+                                            <div>
+                                              <div>命名空间: {claimNamespace}</div>
+                                              <div>名称: {claimName}</div>
+                                            </div>
+                                          ) : '-'}
+                                        </td>
+                                        <td>{formattedTime}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            {canRecycle && (
+                                              <button className="btn-text" onClick={() => {
+                                                setError('回收站功能暂未实现')
+                                              }}>
+                                                回收站
+                                              </button>
+                                            )}
+                                            <button className="btn-text" onClick={() => {
+                                              setError('标签管理功能暂未实现')
+                                            }}>
+                                              标签管理
+                                            </button>
+                                            <button className="btn-text" onClick={() => {
+                                              setError('查看Yaml功能暂未实现')
+                                            }}>
+                                              查看Yaml
+                                            </button>
+                                            <button className="btn-text danger" onClick={() => {
+                                              if (window.confirm(`确定要删除存储卷 ${pv.name} 吗？`)) {
+                                                setError('删除存储卷功能暂未实现')
+                                              }
+                                            }}>
+                                              删除
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {pvs.length === 0 && (
+                                  <tr>
+                                    <td colSpan="9" className="empty-state">{t('k8s.noPVs') || '暂无存储卷'}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && pvs.length > 0 && (
+                            <Pagination
+                              currentPage={pvsPage}
+                              totalPages={Math.ceil(pvsTotal / pvsPageSize)}
+                              totalItems={pvsTotal}
+                              pageSize={pvsPageSize}
+                              onPageChange={(page) => {
+                                setPvsPage(page)
+                                fetchPVs()
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setPvsPageSize(newSize)
+                                setPvsPage(1)
+                                fetchPVs()
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* 存储类 (StorageClass) 列表 */}
+                      {storageSubtab === 'storageclasses' && (
+                      <div className="deployment-list-section">
+                          <div className="section-header deployment-header">
+                            <div className="deployment-title">
+                              <h2>存储类 <span className="deployment-subtitle">StorageClass</span></h2>
+                            </div>
+                          </div>
+
+                          <div className="deployment-toolbar">
+                            <div className="deployment-toolbar-left">
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  setError('创建存储类功能暂未实现')
+                                }}
+                              >
+                                创建
+                              </button>
+                              <button className="btn-secondary" disabled>
+                                使用YAML创建资源
+                              </button>
+
+                              <div className="toolbar-filters">
+                                <div className="toolbar-search">
+                                  <input
+                                    className="toolbar-search-input"
+                                    placeholder="请输入"
+                                    value={storageSearchTerm}
+                                    onChange={(e) => setStorageSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        fetchStorageClasses()
+                                      }
+                                    }}
+                                  />
+                                  <button
+                                    className="toolbar-search-btn"
+                                    onClick={() => fetchStorageClasses()}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                      <path d="M14 14L11.1 11.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="deployment-toolbar-right">
+                              <button
+                                className="icon-btn"
+                                title="刷新"
+                                onClick={() => fetchStorageClasses()}
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                  <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="table-wrapper">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>名称</th>
+                                  <th>提供者</th>
+                                  <th>参数</th>
+                                  <th>回收策略</th>
+                                  <th>创建时间</th>
+                                  <th>操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {storageClasses
+                                  .filter((sc) => {
+                                    if (!storageSearchTerm) return true
+                                    return (sc.name || '').toLowerCase().includes(storageSearchTerm.toLowerCase())
+                                  })
+                                  .map((sc) => {
+                                    // 格式化创建时间：YYYY-MM-DD HH:MM:SS
+                                    let formattedTime = '-'
+                                    if (sc.created_at || sc.createdAt) {
+                                      const date = new Date(sc.created_at || sc.createdAt)
+                                      const year = date.getFullYear()
+                                      const month = String(date.getMonth() + 1).padStart(2, '0')
+                                      const day = String(date.getDate()).padStart(2, '0')
+                                      const hours = String(date.getHours()).padStart(2, '0')
+                                      const minutes = String(date.getMinutes()).padStart(2, '0')
+                                      const seconds = String(date.getSeconds()).padStart(2, '0')
+                                      formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+                                    }
+                                    
+                                    // 格式化参数显示（作为标签）
+                                    const parameters = sc.parameters || {}
+                                    const paramEntries = Object.entries(parameters)
+                                    
+                                    return (
+                                      <tr key={sc.name}>
+                                        <td className="name-cell">{sc.name}</td>
+                                        <td>{sc.provisioner || sc.provider || '-'}</td>
+                                        <td>
+                                          {paramEntries.length > 0 ? (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                              {paramEntries.map(([key, value]) => (
+                                                <span
+                                                  key={key}
+                                                  style={{
+                                                    padding: '2px 8px',
+                                                    borderRadius: '4px',
+                                                    background: '#f0f0f0',
+                                                    fontSize: '12px',
+                                                    color: '#666'
+                                                  }}
+                                                >
+                                                  {key}: {String(value)}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : '-'}
+                                        </td>
+                                        <td>{sc.reclaimPolicy || sc.recyclePolicy || '-'}</td>
+                                        <td>{formattedTime}</td>
+                                        <td>
+                                          <div className="action-buttons">
+                                            <button className="btn-text" onClick={() => {
+                                              setError('查看Yaml功能暂未实现')
+                                            }}>
+                                              查看Yaml
+                                            </button>
+                                            <button className="btn-text danger" onClick={() => {
+                                              if (window.confirm(`确定要删除存储类 ${sc.name} 吗？`)) {
+                                                setError('删除存储类功能暂未实现')
+                                              }
+                                            }}>
+                                              删除
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                {storageClasses.length === 0 && (
+                                  <tr>
+                                    <td colSpan="6" className="empty-state">{t('k8s.noStorageClasses') || '暂无存储类'}</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {!loading && storageClasses.length > 0 && (
+                            <Pagination
+                              currentPage={storageClassesPage}
+                              totalPages={Math.ceil(storageClassesTotal / storageClassesPageSize)}
+                              totalItems={storageClassesTotal}
+                              pageSize={storageClassesPageSize}
+                              onPageChange={(page) => {
+                                setStorageClassesPage(page)
+                                fetchStorageClasses()
+                              }}
+                              onPageSizeChange={(newSize) => {
+                                setStorageClassesPageSize(newSize)
+                                setStorageClassesPage(1)
+                                fetchStorageClasses()
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
               </>

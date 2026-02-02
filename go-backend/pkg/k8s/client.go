@@ -10,6 +10,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -366,6 +367,24 @@ func (c *Client) GetPersistentVolumeClaims(ctx context.Context, namespace string
 		return nil, fmt.Errorf("获取PVC列表失败: %w", err)
 	}
 	return pvcs.Items, nil
+}
+
+// GetPersistentVolumes 获取PV列表
+func (c *Client) GetPersistentVolumes(ctx context.Context) ([]corev1.PersistentVolume, error) {
+	pvs, err := c.clientset.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("获取PV列表失败: %w", err)
+	}
+	return pvs.Items, nil
+}
+
+// GetStorageClasses 获取StorageClass列表
+func (c *Client) GetStorageClasses(ctx context.Context) ([]storagev1.StorageClass, error) {
+	storageClasses, err := c.clientset.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("获取StorageClass列表失败: %w", err)
+	}
+	return storageClasses.Items, nil
 }
 
 // GetPod 获取单个Pod
